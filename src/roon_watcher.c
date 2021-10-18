@@ -49,7 +49,7 @@ static void print_entry(const char *what, void *p_opaque,
 }
 
 #ifdef PLATFORM_WINDOWS
-static int list_shares(void *p_opaque,
+static int list_shares_win(void *p_opaque,
                        netbios_ns_entry *entry) {
     PSHARE_INFO_502 BufPtr,p;
     NET_API_STATUS res;
@@ -63,18 +63,13 @@ static int list_shares(void *p_opaque,
         lpszServer[i] = cstrName[i];
     }
     
-    printf("Share:              Local Path:                   Uses:   Descriptor:\n");
-    printf("---------------------------------------------------------------------\n");
     do {
         res = NetShareEnum (lpszServer, 502, (LPBYTE *) &BufPtr, MAX_PREFERRED_LENGTH, &er, &tr, &resume);
         if(res == ERROR_SUCCESS || res == ERROR_MORE_DATA) {
             p=BufPtr;
+            printf("        share count: %i\n", er);
             for(i=1;i<=er;i++) {
-                printf("%-20S%-30S%-8u",p->shi502_netname, p->shi502_path, p->shi502_current_uses);
-                if (IsValidSecurityDescriptor(p->shi502_security_descriptor))
-                    printf("Yes\n");
-                else
-                    printf("No\n");
+                printf("        share name: %s\n", p->shi502_netname);
                 p++;
             }
             NetApiBufferFree(BufPtr);
@@ -249,7 +244,7 @@ static int list_shares_smb2(void *p_opaque,
         
     return -cb_status;
 }
-
+#endif
 static int list_shares(void *p_opaque,
                        netbios_ns_entry *entry) {
     struct credentials *creds = (struct credentials *)p_opaque;
@@ -258,6 +253,23 @@ static int list_shares(void *p_opaque,
     guest_creds->username  = "";
     guest_creds->password  = "";
 
+#ifdef PLATFORM_WINDOWS
+    printf("  attempting to list shares using netshareenum as guest\n");
+    int win_ret = list_shares_win(guest_creds, entry);
+    printf("  return value: %d\n", win_ret);
+    if (win_ret == 0) {
+        return 0;
+    }
+
+    if (creds->username[0] != '\0') {
+    printf("  attempting to list shares using netshareenum with credentials\n");
+        win_ret = list_shares_win(creds, entry);
+        printf("  return value: %d\n", win_ret);
+        if (win_ret == 0) {
+            return 0;
+        }
+    }
+#else
     printf("  attempting to list shares over smb1 as guest\n");
     int smb1_ret = list_shares_smb1(guest_creds, entry);
     printf("  return value: %d\n", smb1_ret);
@@ -287,8 +299,9 @@ static int list_shares(void *p_opaque,
             return 0;
         }
     }
-}
 #endif
+}
+
 
 static void on_entry_added(void *p_opaque,
                            netbios_ns_entry *entry) {
