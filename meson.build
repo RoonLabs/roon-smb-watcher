@@ -55,13 +55,7 @@ watcher_sources = [
   'src/roon_watcher.c'
  ]
 
-#watcher_headers = [
-#  'include/bdsm/netbios_defs.h',
-#  'include/bdsm/netbios_ns.h',
-#  'include/bdsm.h'
-#]
-
-includes = include_directories('.', 'include')
+includes = include_directories('.')
 
 watcherobj = executable('roon_smb_watcher', watcher_sources,
                         #build_rpath: meson.source_root() + '/lib',
