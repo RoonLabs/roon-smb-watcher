@@ -1,10 +1,11 @@
 project('roon-smb-watcher', ['c'],
     version: '0.1.0',
     license: ['LGPL2'],
-    default_options: ['c_std=c99',
+    default_options: ['c_std=c11',
                       'warning_level=2',
                       'buildtype=release',
-                      'b_ndebug=if-release'],
+                      'b_ndebug=if-release',
+                      'default_library=static'],
     meson_version: '>= 0.50.0')
 
 conf_data = configuration_data()
@@ -18,35 +19,6 @@ conf_data.set('_DEFAULT_SOURCE', 1)
 cc = meson.get_compiler('c')
 
 test_args = ''
-
-# Check headers
-#if cc.has_header('bsd/string.h')
-#  conf_data.set('HAVE_BSD_STRING_H', 1)
-#endif
-#
-#if cc.has_header('alloca.h')
-#  conf_data.set('HAVE_ALLOCA_H', 1)
-#endif
-#
-#if cc.has_header('sys/queue.h')
-#  conf_data.set('HAVE_SYS_QUEUE_H', 1)
-#endif
-#
-#if cc.has_header('arpa/inet.h')
-#  conf_data.set('HAVE_ARPA_INET_H', 1)
-#endif
-#
-#if cc.has_header('sys/socket.h')
-#  conf_data.set('HAVE_SYS_SOCKET_H', 1)
-#endif
-#
-#if cc.has_header('sys/time.h')
-#  conf_data.set('HAVE_SYS_TIME_H', 1)
-#endif
-#
-#if cc.has_header('ifaddrs.h')
-#  conf_data.set('HAVE_IFADDRS_H', 1)
-#endif
 
 warning_arguments = [
   '-Wall',
@@ -71,12 +43,9 @@ else
   endif
 endif
 
-compat_sources = []
-
 deps = [
   dependency('threads'),
-  dependency('libdsm'),
-  dependency('libsmb2')
+  subproject('libsmb2').get_variable('bin_dep')
 ]
 
 watcher_sources = [
@@ -92,6 +61,10 @@ watcher_sources = [
 includes = include_directories('.', 'include')
 
 watcherobj = executable('roon_smb_watcher', watcher_sources,
+                        #build_rpath: meson.source_root() + '/lib',
+                        link_with: subproject('libdsm').get_variable('libdsm'),
                         dependencies: deps,
+                        install: true,
+                        install_dir:'bin',
                         include_directories: includes)
 

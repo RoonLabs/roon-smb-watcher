@@ -7,7 +7,6 @@ function gitclone {
         rm -rf tmp
         mkdir tmp
         pushd tmp > /dev/null
-        SL GITCLONE-$2: cloning $1
         git clone --no-checkout $1 $2
         pushd $2 > /dev/null
         git checkout $3
@@ -22,17 +21,35 @@ function gitclone {
     fi
 }
 
+ROOT=$PWD
+
+pushd subprojects/
 rm -rf libsmb2
 rm -rf libdsm
 
 gitclone https://github.com/sahlberg/libsmb2.git libsmb2 4a5a0d0c9498c8a2a6b7d21cc3454229c81ae5c0
 #gitclone https://github.com/RoonLabs/libdsm.git 4a5a0d0c9498c8a2a6b7d21cc3454229c81ae5c0
-gitclone ben@192.168.1.135:/home/ben/bcoburn3-github/libdsm 
+gitclone ben@192.168.1.135:/home/ben/bcoburn3-github/libdsm libdsm 
 
 echo "Building libsmb2"
 echo ================================================================================
-
 pushd libsmb2
 ./bootstrap
-./configure --disable-werror --without-libkrb5
+./configure --disable-werror --without-libkrb5 --prefix=$ROOT/tmp
 make -j8
+make install
+cp $ROOT/tmp/lib/libsmb2.a libsmb2.a
+popd
+
+cd $ROOT
+
+
+echo "Building roon-smb-watcher"
+echo ================================================================================
+cp libsmb2binary.meson.build subprojects/libsmb2/meson.build
+meson setup --wipe --prefix=$ROOT build
+pushd build
+#meson compile -C .
+ninja
+ninja install
+popd
