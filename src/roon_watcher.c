@@ -5,10 +5,6 @@
 #include <windows.h>
 #include <lmshare.h>
 
-#ifndef UNICODE
-#define UNICODE
-#endif
-
 #pragma comment(lib, "Netapi32.lib")
 #pragma comment(lib, "Advapi32.lib")
 
@@ -56,9 +52,15 @@ static int list_shares(void *p_opaque,
                        netbios_ns_entry *entry) {
     PSHARE_INFO_502 BufPtr,p;
     NET_API_STATUS res;
-    LPTSTR   lpszServer = NULL;
+    LPTSTR lpszServer = NULL;
     DWORD er=0,tr=0,resume=0, i;
-    lpszServer = netbios_ns_entry_name(entry);
+
+    char* cstrName = netbios_ns_entry_name(entry);
+    int name_len = strlen(name);
+    lpszServer = calloc(name_len + 1, sizeof(TCHAR));
+    for (int i = 0; i < name_len; i++) {
+        lpszServer[i] = cstrName[i];
+    }
     
     printf("Share:              Local Path:                   Uses:   Descriptor:\n");
     printf("---------------------------------------------------------------------\n");
