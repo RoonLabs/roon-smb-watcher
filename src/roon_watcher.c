@@ -64,8 +64,8 @@ static int list_shares_win(void *p_opaque,
     int name_len = strlen(cstrName);
     */
     const char* cstrIp = inet_ntoa(addr);
-    name_len = strlen(cstrIp + 7);
-    const char* cstrName = calloc(name_len, size(char));
+    int name_len = strlen(cstrIp + 7);
+    const char* cstrName = calloc(name_len, sizeof(char));
 
     snprintf(cstrName, name_len, "smb://%s", cstrIp);
         
