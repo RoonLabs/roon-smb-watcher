@@ -4,6 +4,7 @@
 #ifdef PLATFORM_WINDOWS
 #include <windows.h>
 #include <lm.h>
+
 #else
 #include <arpa/inet.h>
 #include <inttypes.h>
@@ -14,12 +15,13 @@
 #include <time.h>
 #include <unistd.h>
 #include <errno.h>
-#endif
 
-#include "bdsm.h"
 #include "smb2/smb2.h"
 #include "smb2/libsmb2.h"
 #include "smb2/libsmb2-raw.h"
+#endif
+
+#include "bdsm.h"
 
 struct credentials {
     char *workgroup;
