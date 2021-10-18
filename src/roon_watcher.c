@@ -56,7 +56,7 @@ static int list_shares(void *p_opaque,
     DWORD er=0,tr=0,resume=0, i;
 
     char* cstrName = netbios_ns_entry_name(entry);
-    int name_len = strlen(name);
+    int name_len = strlen(cstrName);
     lpszServer = calloc(name_len + 1, sizeof(TCHAR));
     for (int i = 0; i < name_len; i++) {
         lpszServer[i] = cstrName[i];
