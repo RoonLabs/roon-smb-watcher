@@ -44,7 +44,8 @@ if [ "x`uname -o`" != "xCygwin" ]; then
 else
     mkdir build
     cd build
-    cmake -G "Visual Studio 15 2017" -DBUILD_SHARED_LIBS=0 ..
+    #    cmake -G "Visual Studio 15 2017" -DBUILD_SHARED_LIBS=0 ..
+    cmake -DBUILD_SHARED_LIBS=0 ..
     cmake --build . --config RelWithDebInfo
 fi
 popd
