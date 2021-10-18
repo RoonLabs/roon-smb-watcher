@@ -56,7 +56,10 @@ static int list_shares_win(void *p_opaque,
     LMSTR lpszServer = NULL;
     DWORD er=0,tr=0,resume=0, i;
 
-    const char* cstrName = netbios_ns_entry_name(entry);
+    struct in_addr addr;
+    addr.s_addr = netbios_ns_entry_ip(entry);
+    const char* cstrName = inet_ntoa(addr);
+//    const char* cstrName = netbios_ns_entry_name(entry);
     int name_len = strlen(cstrName);
     lpszServer = calloc(name_len + 1, sizeof(TCHAR));
     for (int i = 0; i < name_len; i++) {
