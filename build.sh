@@ -32,7 +32,7 @@ gitclone https://github.com/sahlberg/libsmb2.git libsmb2 4a5a0d0c9498c8a2a6b7d21
 #gitclone https://github.com/RoonLabs/libdsm.git 4a5a0d0c9498c8a2a6b7d21cc3454229c81ae5c0
 gitclone ben@192.168.1.135:/home/ben/bcoburn3-github/libdsm libdsm 
 
-if [ "x`uname -o`" -ne "xCygwin" ]; then
+if [ "x`uname -o`" != "xCygwin" ]; then
     echo "Building libsmb2"
     echo ================================================================================
     pushd libsmb2
