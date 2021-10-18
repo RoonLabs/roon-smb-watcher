@@ -3,7 +3,7 @@
 #include <stdio.h>
 #ifdef PLATFORM_WINDOWS
 #include <windows.h>
-#include <lmshare.h>
+#include <lm.h>
 
 #pragma comment(lib, "Netapi32.lib")
 #pragma comment(lib, "Advapi32.lib")
