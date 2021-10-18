@@ -44,9 +44,12 @@ else
 endif
 
 deps = [
-  dependency('threads'),
-  subproject('libsmb2').get_variable('bin_dep')
+  dependency('threads')
 ]
+
+if host_machine.system() != 'windows' and host_machine.system() != 'cygwin'
+  deps += subproject('libsmb2').get_variable('bin_dep')
+endif
 
 watcher_sources = [
   'src/roon_watcher.c'
