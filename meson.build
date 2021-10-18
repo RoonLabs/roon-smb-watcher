@@ -49,6 +49,8 @@ deps = [
 if host_machine.system() != 'windows' and host_machine.system() != 'cygwin'
   deps += subproject('libsmb2').get_variable('bin_dep')
   deps += dependency('threads')
+else
+  deps += declare_dependency(link_args: [ '-lnetapi32', '-ladvapi32' ])
 endif
 
 watcher_sources = [

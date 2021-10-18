@@ -5,9 +5,6 @@
 #include <windows.h>
 #include <lm.h>
 
-#pragma comment(lib, "Netapi32.lib")
-#pragma comment(lib, "Advapi32.lib")
-
 #ifndef UNICODE
 #define UNICODE
 #endif
