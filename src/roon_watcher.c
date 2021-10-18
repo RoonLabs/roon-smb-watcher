@@ -58,9 +58,17 @@ static int list_shares_win(void *p_opaque,
 
     struct in_addr addr;
     addr.s_addr = netbios_ns_entry_ip(entry);
+    /*
     const char* cstrName = inet_ntoa(addr);
 //    const char* cstrName = netbios_ns_entry_name(entry);
     int name_len = strlen(cstrName);
+    */
+    const char* cstrIp = inet_ntoa(addr);
+    name_len = strlen(cstrIp + 7);
+    const char* cstrName = calloc(name_len, size(char));
+
+    snprintf(cstrName, name_len, "smb://%s", cstrIp);
+        
     lpszServer = calloc(name_len + 1, sizeof(TCHAR));
     for (int i = 0; i < name_len; i++) {
         lpszServer[i] = cstrName[i];
