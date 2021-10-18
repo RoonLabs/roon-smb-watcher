@@ -9,6 +9,9 @@
 #define UNICODE
 #endif
 
+#pragma comment(lib, "Netapi32.lib")
+#pragma comment(lib, "Advapi32.lib")
+
 #else
 #include <inttypes.h>
 #include <poll.h>
