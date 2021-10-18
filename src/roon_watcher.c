@@ -67,7 +67,7 @@ static int list_shares_win(void *p_opaque,
     int name_len = strlen(cstrIp + 7);
     const char* cstrName = calloc(name_len, sizeof(char));
 
-    snprintf(cstrName, name_len, "\\%s", cstrIp);
+    snprintf(cstrName, name_len, "%s", cstrIp);
         
     lpszServer = calloc(name_len + 1, sizeof(TCHAR));
     for (int i = 0; i < name_len; i++) {
