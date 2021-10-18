@@ -143,9 +143,9 @@ void se_cb(struct smb2_context *smb2, int status,
                 return;
         }
 
-        printf("    Number of shares:%d\n", rep->ctr->ctr1.count);
+        printf("        share count: %i\n", rep->ctr->ctr1.count);
         for (i = 0; i < rep->ctr->ctr1.count; i++) {
-                printf("    %-20s %-20s", rep->ctr->ctr1.array[i].name,
+                printf("        share name: %-20s %-20s", rep->ctr->ctr1.array[i].name,
                        rep->ctr->ctr1.array[i].comment);
                 if ((rep->ctr->ctr1.array[i].type & 3) == SHARE_TYPE_DISKTREE) {
                         printf("     DISKTREE");
@@ -187,8 +187,10 @@ static int list_shares_smb2(void *p_opaque,
     }
 
     cb_status = 1;
-    
-    char *server = netbios_ns_entry_name(entry);
+
+    struct in_addr addr;
+    addr.s_addr = netbios_ns_entry_ip(entry);
+    char *server = inet_ntoa(addr);
     smb2_set_security_mode(smb2, SMB2_NEGOTIATE_SIGNING_ENABLED);
 
     if (creds->username[0] != '\0') smb2_set_user(smb2, creds->username);

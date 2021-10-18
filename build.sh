@@ -25,8 +25,8 @@ ROOT=$PWD
 
 if [ ! -d subprojects ]; then mkdir subprojects; fi
 pushd subprojects/
-rm -rf libsmb2
-rm -rf libdsm
+#rm -rf libsmb2
+#rm -rf libdsm
 
 gitclone https://github.com/sahlberg/libsmb2.git libsmb2 4a5a0d0c9498c8a2a6b7d21cc3454229c81ae5c0
 #gitclone https://github.com/RoonLabs/libdsm.git 4a5a0d0c9498c8a2a6b7d21cc3454229c81ae5c0
