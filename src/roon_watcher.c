@@ -32,7 +32,10 @@ struct credentials {
 #ifdef PLATFORM_WINDOWS
 static int list_shares(void *p_opaque,
                        netbios_ns_entry *entry) {
+    PSHARE_INFO_502 BufPtr,p;
+    NET_API_STATUS res;
     LPTSTR   lpszServer = NULL;
+    DWORD er=0,tr=0,resume=0, i;
     lpszServer = netbios_ns_entry_name(entry);
     
     printf("Share:              Local Path:                   Uses:   Descriptor:\n");
