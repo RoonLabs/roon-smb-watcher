@@ -8,6 +8,10 @@
 #pragma comment(lib, "Netapi32.lib")
 #pragma comment(lib, "Advapi32.lib")
 
+#ifndef UNICODE
+#define UNICODE
+#endif
+
 #else
 #include <inttypes.h>
 #include <poll.h>
@@ -55,7 +59,7 @@ static int list_shares(void *p_opaque,
     LPTSTR lpszServer = NULL;
     DWORD er=0,tr=0,resume=0, i;
 
-    char* cstrName = netbios_ns_entry_name(entry);
+    const char* cstrName = netbios_ns_entry_name(entry);
     int name_len = strlen(cstrName);
     lpszServer = calloc(name_len + 1, sizeof(TCHAR));
     for (int i = 0; i < name_len; i++) {
