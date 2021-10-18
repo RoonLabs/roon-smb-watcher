@@ -86,7 +86,7 @@ static int list_shares_win(void *p_opaque,
             NetApiBufferFree(BufPtr);
         }
         else 
-            printf("Error: %ld\n",res);
+            printf("Error attempting to list shares on %S: %ld\n", lpszServer, res);
     }
     while (res==ERROR_MORE_DATA);
 }
