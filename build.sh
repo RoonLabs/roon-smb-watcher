@@ -50,7 +50,5 @@ echo ===========================================================================
 cp libsmb2binary.meson.build subprojects/libsmb2/meson.build
 meson setup --wipe --prefix=$ROOT build
 pushd build
-#meson compile -C .
 ninja
-ninja install
 popd
