@@ -29,20 +29,6 @@ struct credentials {
     char *password;
 };
 
-static void print_entry(const char *what, void *p_opaque,
-                        netbios_ns_entry *entry) {
-    struct in_addr addr;
-
-    addr.s_addr = netbios_ns_entry_ip(entry);
-
-    printf("%s(%p): Ip: %s, name: %s/%s<%x>\n",
-           what,
-           p_opaque,
-           inet_ntoa(addr),    netbios_ns_entry_group(entry),
-           netbios_ns_entry_name(entry),
-           netbios_ns_entry_type(entry));
-}
-
 #ifdef PLATFORM_WINDOWS
 static int list_shares(void *p_opaque,
                        netbios_ns_entry *entry) {
@@ -71,6 +57,20 @@ static int list_shares(void *p_opaque,
     while (res==ERROR_MORE_DATA);
 }
 #else
+static void print_entry(const char *what, void *p_opaque,
+                        netbios_ns_entry *entry) {
+    struct in_addr addr;
+
+    addr.s_addr = netbios_ns_entry_ip(entry);
+
+    printf("%s(%p): Ip: %s, name: %s/%s<%x>\n",
+           what,
+           p_opaque,
+           inet_ntoa(addr),    netbios_ns_entry_group(entry),
+           netbios_ns_entry_name(entry),
+           netbios_ns_entry_type(entry));
+}
+
 static int list_shares_smb1(void *p_opaque,
                             netbios_ns_entry *entry) {
     struct credentials *creds = (struct credentials *)p_opaque;
