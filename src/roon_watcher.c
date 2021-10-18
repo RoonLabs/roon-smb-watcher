@@ -69,7 +69,7 @@ static int list_shares_win(void *p_opaque,
             p=BufPtr;
             printf("        share count: %i\n", er);
             for(i=1;i<=er;i++) {
-                printf("        share name: %s\n", p->shi502_netname);
+                printf("        share name: %S\n", p->shi502_netname);
                 p++;
             }
             NetApiBufferFree(BufPtr);
