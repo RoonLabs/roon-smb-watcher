@@ -3,7 +3,7 @@
 #include <stdio.h>
 #ifdef PLATFORM_WINDOWS
 #include <windows.h>
-#include <lm.h>
+#include <lmshare.h>
 
 #ifndef UNICODE
 #define UNICODE
