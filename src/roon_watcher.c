@@ -19,14 +19,14 @@
 #include <unistd.h>
 #include <errno.h>
 
-#include "smb2/smb2.h"
-#include "smb2/libsmb2.h"
-#include "smb2/libsmb2-raw.h"
 #endif
 
 #include <arpa/inet.h>
 
 #include "bdsm.h"
+#include "smb2/smb2.h"
+#include "smb2/libsmb2.h"
+#include "smb2/libsmb2-raw.h"
 
 struct credentials {
     char *workgroup;
@@ -90,7 +90,7 @@ static int list_shares_win(void *p_opaque,
     }
     while (res==ERROR_MORE_DATA);
 }
-#else
+#endif
 static int list_shares_smb1(void *p_opaque,
                             netbios_ns_entry *entry) {
     struct credentials *creds = (struct credentials *)p_opaque;
@@ -255,7 +255,6 @@ static int list_shares_smb2(void *p_opaque,
         
     return -cb_status;
 }
-#endif
 static int list_shares(void *p_opaque,
                        netbios_ns_entry *entry) {
     struct credentials *creds = (struct credentials *)p_opaque;
@@ -280,7 +279,7 @@ static int list_shares(void *p_opaque,
             return 0;
         }
     }
-#else
+#endif
     printf("  attempting to list shares over smb1 as guest\n");
     int smb1_ret = list_shares_smb1(guest_creds, entry);
     printf("  return value: %d\n", smb1_ret);
@@ -310,7 +309,6 @@ static int list_shares(void *p_opaque,
             return 0;
         }
     }
-#endif
 }
 
 

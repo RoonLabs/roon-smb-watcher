@@ -32,17 +32,22 @@ gitclone https://github.com/sahlberg/libsmb2.git libsmb2 4a5a0d0c9498c8a2a6b7d21
 #gitclone https://github.com/RoonLabs/libdsm.git 4a5a0d0c9498c8a2a6b7d21cc3454229c81ae5c0
 gitclone ben@192.168.1.135:/home/ben/bcoburn3-github/libdsm libdsm 
 
+echo "Building libsmb2"
+echo ================================================================================
+pushd libsmb2
 if [ "x`uname -o`" != "xCygwin" ]; then
-    echo "Building libsmb2"
-    echo ================================================================================
-    pushd libsmb2
     ./bootstrap
     ./configure --disable-werror --without-libkrb5 --prefix=$ROOT/tmp
     make -j8
     make install
     cp $ROOT/tmp/lib/libsmb2.a libsmb2.a
-    popd
+else
+    mkdir build
+    cd build
+    cmake -G "Visual Studio 15 2017" -DBUILD_SHARED_LIBS=0 ..
+    cmake --build . --config RelWithDebInfo
 fi
+popd
 
 cd $ROOT
 
