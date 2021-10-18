@@ -23,6 +23,7 @@ function gitclone {
 
 ROOT=$PWD
 
+if [ ! -d subprojects ]; then mkdir subprojects; fi
 pushd subprojects/
 rm -rf libsmb2
 rm -rf libdsm
