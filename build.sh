@@ -25,13 +25,13 @@ ROOT=$PWD
 
 if [ ! -d subprojects ]; then mkdir subprojects; fi
 pushd subprojects/
-#rm -rf libsmb2
-#rm -rf libdsm
+rm -rf libsmb2
+rm -rf libdsm
 
 if [ "x`uname -o`" != "xCygwin" ]; then
     gitclone https://github.com/sahlberg/libsmb2.git libsmb2 4a5a0d0c9498c8a2a6b7d21cc3454229c81ae5c0
 fi
-gitclone ben@192.168.1.135:/home/ben/bcoburn3-github/libdsm libdsm 
+gitclone https://github.com/RoonLabs/libdsm.git libdsm 
 
 echo "Building libsmb2"
 echo ================================================================================
