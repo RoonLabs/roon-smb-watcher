@@ -4,6 +4,8 @@
 #ifdef PLATFORM_WINDOWS
 #include <windows.h>
 #include <lm.h>
+#include <tchar.h>
+#include <Winnetwk.h>
 
 #ifndef UNICODE
 #define UNICODE
@@ -49,26 +51,15 @@ static void print_entry(const char *what, void *p_opaque,
 }
 
 #ifdef PLATFORM_WINDOWS
-static int list_shares_win(void *p_opaque,
+static int list_shares_nse(void *p_opaque,
                        netbios_ns_entry *entry) {
     PSHARE_INFO_502 BufPtr,p;
     NET_API_STATUS res;
     LMSTR lpszServer = NULL;
     DWORD er=0,tr=0,resume=0, i;
 
-    struct in_addr addr;
-    addr.s_addr = netbios_ns_entry_ip(entry);
-
-//   const char* cstrName = inet_ntoa(addr);
     const char* cstrName = netbios_ns_entry_name(entry);
     int name_len = strlen(cstrName);
-    /*
-    const char* cstrIp = inet_ntoa(addr);
-    int name_len = strlen(cstrIp + 7);
-    const char* cstrName = calloc(name_len, sizeof(char));
-
-    snprintf(cstrName, name_len, "%s", cstrIp);
-    */
     lpszServer = calloc(name_len + 1, sizeof(TCHAR));
     for (int i = 0; i < name_len; i++) {
         lpszServer[i] = cstrName[i];
@@ -89,6 +80,44 @@ static int list_shares_win(void *p_opaque,
             printf("Error attempting to list shares on %S: %ld\n", lpszServer, res);
     }
     while (res==ERROR_MORE_DATA);
+}
+
+static int list_shares_unc(void *p_opaque,
+                       netbios_ns_entry *entry) {
+    struct credentials *creds = (struct credentials *)p_opaque;
+    struct in_addr  addr;
+    NETRESOURCE nr;
+    DWORD dwFlags;
+
+    addr.s_addr = netbios_ns_entry_ip(entry);
+    const char* cstrIp = inet_ntoa(addr);
+    int name_len = strlen(cstrIp + 7);
+    const char* cstrName = calloc(name_len, sizeof(char));
+    snprintf(cstrName, name_len, "\\%s", cstrIp);
+    
+    LPTSTR lpRemoteName = calloc(name_len + 1, sizeof(TCHAR));
+    for (int i = 0; i < name_len; i++) {
+        lpRemoteName[i] = cstrName[i];
+    }
+    
+    memset(&nr, 0, sizeof (NETRESOURCE));
+    nr.dwType = RESOURCETYPE_ANY;
+    nr.lpLocalName = NULL;
+    nr.lpRemoteName = lpRemoteName;
+    nr.lpProvider = NULL;
+
+    DWORD flags = 0;
+    DWORD buf_len = 1024;
+    LPTSTR lpAccessName = calloc(buf_len, sizeof(TCHAR));
+    DWORD lpResult = 0;
+
+    DWORD use_ret = WNetUseConnection(NULL, nr, creds->password, creds->username, flags, lpAccessName, &buf_len, &lpResult);
+    if (use_ret != NO_ERROR) {
+        printf("    Unable to connect to host %s\n", inet_ntoa(addr));
+        return use_ret;
+    }
+
+    printf("    Connected to host %s by ip address: %s\n", netbios_ns_entry_name(entry), cstrName);
 }
 #endif
 static int list_shares_smb1(void *p_opaque,
@@ -265,50 +294,37 @@ static int list_shares(void *p_opaque,
 
 #ifdef PLATFORM_WINDOWS
     printf("  attempting to list shares using netshareenum as guest\n");
-    int win_ret = list_shares_win(guest_creds, entry);
-    printf("  return value: %d\n", win_ret);
-    if (win_ret == 0) {
-        return 0;
-    }
+    int nse_ret = list_shares_nse(guest_creds, entry);
+    printf("  return value: %d\n", nse_ret);
 
     if (creds->username[0] != '\0') {
-    printf("  attempting to list shares using netshareenum with credentials\n");
-        win_ret = list_shares_win(creds, entry);
-        printf("  return value: %d\n", win_ret);
-        if (win_ret == 0) {
-            return 0;
-        }
+        printf("  attempting to list shares using netshareenum with credentials\n");
+        nse_ret = list_shares_nse(creds, entry);
+        printf("  return value: %d\n", nse_ret);
     }
-#endif
+#else
     printf("  attempting to list shares over smb1 as guest\n");
     int smb1_ret = list_shares_smb1(guest_creds, entry);
     printf("  return value: %d\n", smb1_ret);
-    if (smb1_ret == 0) {
-        return 0;
-    }
 
-    printf("  attempting to list shares over smb2 as guest\n");
-    int smb2_ret = list_shares_smb2(guest_creds, entry);
-    printf("  return value: %d\n", smb2_ret);
-    if (smb2_ret == 0) {
-        return 0;
+    if (smb1_ret != 0) {
+        printf("  attempting to list shares over smb2 as guest\n");
+        int smb2_ret = list_shares_smb2(guest_creds, entry);
+        printf("  return value: %d\n", smb2_ret);
     }
 
     if (creds->username[0] != '\0') {
         printf("  attempting to list shares over smb1 with credentials\n");
         smb1_ret = list_shares_smb1(creds, entry);
         printf("  return value: %d\n", smb1_ret);
-        if (smb1_ret == 0) {
-            return 0;
-        }
 
-        printf("  attempting to list shares over smb2 with credentials\n");
-        smb2_ret = list_shares_smb2(creds, entry);
-        printf("  return value: %d\n", smb2_ret);
-        if (smb2_ret == 0) {
-            return 0;
+        if (smb1_ret != 0) {
+            printf("  attempting to list shares over smb2 with credentials\n");
+            int smb2_ret = list_shares_smb2(creds, entry);
+            printf("  return value: %d\n", smb2_ret);
         }
     }
+#endif
 }
 
 
