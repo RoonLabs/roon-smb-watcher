@@ -20,6 +20,11 @@
 #include <arpa/inet.h>
 
 #include "bdsm.h"
+#ifndef PLATFORM_WINDOWS
+#include "smb2/smb2.h"
+#include "smb2/libsmb2.h"
+#include "smb2/libsmb2-raw.h"
+#endif
 
 struct credentials {
     char *workgroup;
