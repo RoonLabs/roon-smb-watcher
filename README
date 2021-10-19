@@ -1,6 +1,6 @@
 This is a hopefully small program that watches for SMB shares on the local network and interacts with host program over stdin/stdout
 
 To build:
-get meson installed
-meson build
-meson compile -C build
+get build tools installed:
+meson ninja automake autoconf libtool
+./build.sh
