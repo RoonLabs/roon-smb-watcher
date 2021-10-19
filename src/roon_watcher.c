@@ -3,15 +3,9 @@
 #include <stdio.h>
 #ifdef PLATFORM_WINDOWS
 #include <windows.h>
-#include <lm.h>
-#include <tchar.h>
-#include <Winnetwk.h>
-
-#ifndef UNICODE
-#define UNICODE
-#endif
 
 #else
+
 #include <inttypes.h>
 #include <poll.h>
 #include <stdint.h>
@@ -50,76 +44,7 @@ static void print_entry(const char *what, void *p_opaque,
            netbios_ns_entry_type(entry));
 }
 
-#ifdef PLATFORM_WINDOWS
-static int list_shares_nse(void *p_opaque,
-                       netbios_ns_entry *entry) {
-    PSHARE_INFO_502 BufPtr,p;
-    NET_API_STATUS res;
-    LMSTR lpszServer = NULL;
-    DWORD er=0,tr=0,resume=0, i;
-
-    const char* cstrName = netbios_ns_entry_name(entry);
-    int name_len = strlen(cstrName);
-    lpszServer = calloc(name_len + 1, sizeof(TCHAR));
-    for (int i = 0; i < name_len; i++) {
-        lpszServer[i] = cstrName[i];
-    }
-    
-    do {
-        res = NetShareEnum (lpszServer, 502, (LPBYTE *) &BufPtr, MAX_PREFERRED_LENGTH, &er, &tr, &resume);
-        if(res == ERROR_SUCCESS || res == ERROR_MORE_DATA) {
-            p=BufPtr;
-            printf("        share count: %i\n", er);
-            for(i=1;i<=er;i++) {
-                printf("        share name: %S\n", p->shi502_netname);
-                p++;
-            }
-            NetApiBufferFree(BufPtr);
-        }
-        else 
-            printf("Error attempting to list shares on %S: %ld\n", lpszServer, res);
-    }
-    while (res==ERROR_MORE_DATA);
-}
-
-static int list_shares_unc(void *p_opaque,
-                       netbios_ns_entry *entry) {
-    struct credentials *creds = (struct credentials *)p_opaque;
-    struct in_addr  addr;
-    NETRESOURCE nr;
-    DWORD dwFlags;
-
-    addr.s_addr = netbios_ns_entry_ip(entry);
-    const char* cstrIp = inet_ntoa(addr);
-    int name_len = strlen(cstrIp + 7);
-    const char* cstrName = calloc(name_len, sizeof(char));
-    snprintf(cstrName, name_len, "\\%s", cstrIp);
-    
-    LPTSTR lpRemoteName = calloc(name_len + 1, sizeof(TCHAR));
-    for (int i = 0; i < name_len; i++) {
-        lpRemoteName[i] = cstrName[i];
-    }
-    
-    memset(&nr, 0, sizeof (NETRESOURCE));
-    nr.dwType = RESOURCETYPE_ANY;
-    nr.lpLocalName = NULL;
-    nr.lpRemoteName = lpRemoteName;
-    nr.lpProvider = NULL;
-
-    DWORD flags = 0;
-    DWORD buf_len = 1024;
-    LPTSTR lpAccessName = calloc(buf_len, sizeof(TCHAR));
-    DWORD lpResult = 0;
-
-    DWORD use_ret = WNetUseConnection(NULL, nr, creds->password, creds->username, flags, lpAccessName, &buf_len, &lpResult);
-    if (use_ret != NO_ERROR) {
-        printf("    Unable to connect to host %s\n", inet_ntoa(addr));
-        return use_ret;
-    }
-
-    printf("    Connected to host %s by ip address: %s\n", netbios_ns_entry_name(entry), cstrName);
-}
-#endif
+#ifndef PLATFORM_WINDOWS
 static int list_shares_smb1(void *p_opaque,
                             netbios_ns_entry *entry) {
     struct credentials *creds = (struct credentials *)p_opaque;
@@ -288,33 +213,10 @@ static int list_shares(void *p_opaque,
                        netbios_ns_entry *entry) {
     struct credentials *creds = (struct credentials *)p_opaque;
     struct credentials *guest_creds = malloc(sizeof(struct credentials));
-    guest_creds->workgroup = "Guest";
-    guest_creds->username  = "";
-    guest_creds->password  = "";
+    guest_creds->workgroup = "";
+    guest_creds->username  = "Guest";
+    guest_creds->password  = "password";
 
-#ifdef PLATFORM_WINDOWS
-    printf("  attempting to list shares using netshareenum as guest\n");
-    int nse_ret = list_shares_nse(guest_creds, entry);
-    printf("  return value: %d\n", nse_ret);
-
-    if (nse_ret != 0) {
-        printf("  attempting to list shares using using wnetuseconnection and directory listing as guest\n");
-        int unc_ret = list_shares_unc(guest_creds, entry);
-        printf("  return value: %d\n", unc_ret);
-    }
-    
-    if (creds->username[0] != '\0') {
-        printf("  attempting to list shares using netshareenum with credentials\n");
-        nse_ret = list_shares_nse(creds, entry);
-        printf("  return value: %d\n", nse_ret);
-
-        if (nse_ret != 0) {
-            printf("  attempting to list shares using using wnetuseconnection and directory listing as guest\n");
-            int unc_ret = list_shares_unc(guest_creds, entry);
-            printf("  return value: %d\n", unc_ret);
-        }
-    }
-#else
     printf("  attempting to list shares over smb1 as guest\n");
     int smb1_ret = list_shares_smb1(guest_creds, entry);
     printf("  return value: %d\n", smb1_ret);
@@ -343,7 +245,9 @@ static int list_shares(void *p_opaque,
 static void on_entry_added(void *p_opaque,
                            netbios_ns_entry *entry) {
     print_entry("added", p_opaque, entry);
+#ifndef PLATFORM_WINDOWS
     int list_ret = list_shares(p_opaque, entry);
+#endif
 }
 
 static void on_entry_removed(void *p_opaque,

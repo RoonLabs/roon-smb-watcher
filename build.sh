@@ -42,12 +42,6 @@ if [ "x`uname -o`" != "xCygwin" ]; then
     make -j8
     make install
     cp $ROOT/tmp/lib/libsmb2.a libsmb2.a
-else
-    if [ ! -d build ]; then mkdir build; fi
-    cd build
-    #    cmake -G "Visual Studio 15 2017" -DBUILD_SHARED_LIBS=0 ..
-    cmake -DBUILD_SHARED_LIBS=0 ..
-    cmake --build . --config RelWithDebInfo
 fi
 popd
 
