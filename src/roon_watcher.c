@@ -235,9 +235,8 @@ static int list_shares(void *p_opaque,
             printf("  return value: %d\n", smb2_ret);
         }
     }
-#endif
 }
-
+#endif
 
 static void on_entry_added(void *p_opaque,
                            netbios_ns_entry *entry) {
