@@ -51,7 +51,7 @@ cd $ROOT
 echo "Building roon-smb-watcher"
 echo ================================================================================
 cp libsmb2binary.meson.build subprojects/libsmb2/meson.build
-meson build
+meson setup "$@" build
 pushd build
 ninja
 popd
