@@ -297,10 +297,22 @@ static int list_shares(void *p_opaque,
     int nse_ret = list_shares_nse(guest_creds, entry);
     printf("  return value: %d\n", nse_ret);
 
+    if (nse_ret != 0) {
+        printf("  attempting to list shares using using wnetuseconnection and directory listing as guest\n");
+        int unc_ret = list_shares_unc(guest_creds, entry);
+        printf("  return value: %d\n", unc_ret);
+    }
+    
     if (creds->username[0] != '\0') {
         printf("  attempting to list shares using netshareenum with credentials\n");
         nse_ret = list_shares_nse(creds, entry);
         printf("  return value: %d\n", nse_ret);
+
+        if (nse_ret != 0) {
+            printf("  attempting to list shares using using wnetuseconnection and directory listing as guest\n");
+            int unc_ret = list_shares_unc(guest_creds, entry);
+            printf("  return value: %d\n", unc_ret);
+        }
     }
 #else
     printf("  attempting to list shares over smb1 as guest\n");
