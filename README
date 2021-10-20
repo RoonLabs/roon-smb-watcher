@@ -4,3 +4,40 @@ To build:
 get build tools installed:
 meson ninja automake autoconf libtool
 ./build.sh
+
+Usage:
+roon_smb_watcher test [workgroup] [username] [password]
+roon_smb_watcher hosts
+roon_smb_watcher shares [workgroup] [username] [password]
+
+workgroup, username, and password are all optional.  if only one
+extra argument is provided, it's treated as a username, if two
+they are treated as username and password in that order
+
+roon_smb_watcher test
+this is meant as manual tool to confirm that the watcher works.  it prints
+every host found, attempts to log in with both the supplied credentials if
+any and username="Guest", password="password", and lists all shares found
+
+roon_smb_watcher hosts
+this is meant as a utility used by Roon to list computers with network
+shares on the local network.  It prints one line per change event, using
+formatting like this:
+<event type> <ip address> <workgroup>/<host name>
+
+where:
+* <event type> can be "added" or "removed"
+* <ip address> is in dotted decimal notation, like "192.168.1.1", as output
+  from `inet_ntoa`
+* <workgroup> and <host name> are the netbios workgroup and host name
+
+This mode never returns, it assumes the caller will simply kill it
+after some timeout
+
+roon_smb_watcher shares <server> [workgroup] [username] [password]
+this is meant as a utility used by Roon to list shares on a particular
+host.
+
+Parameters:
+* <server> can be either a netbios/dns name, or an 
+
