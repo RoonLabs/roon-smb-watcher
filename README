@@ -7,8 +7,8 @@ meson ninja automake autoconf libtool
 
 Usage:
 roon_smb_watcher test [workgroup] [username] [password]
-roon_smb_watcher hosts
-roon_smb_watcher shares [workgroup] [username] [password]
+roon_smb_watcher hosts [timeout]
+roon_smb_watcher shares <name type> <server> [workgroup] [username] [password]
 
 workgroup, username, and password are all optional.  if only one
 extra argument is provided, it's treated as a username, if two
@@ -19,14 +19,18 @@ this is meant as manual tool to confirm that the watcher works.  it prints
 every host found, attempts to log in with both the supplied credentials if
 any and username="Guest", password="password", and lists all shares found
 
-roon_smb_watcher hosts
+roon_smb_watcher hosts <frequency>
 this is meant as a utility used by Roon to list computers with network
-shares on the local network.  It prints one line per change event, using
-formatting like this:
+shares on the local network.  
+
+Parameters:
+* <frequency> is the number of seconds between NBNS query broadcasts
+
+It prints one line per change event, using formatting like this:
 <event type> <ip address> <workgroup>/<host name>
 
 where:
-* <event type> can be "added" or "removed"
+* <event type> can be "ADDED" or "REMOVED"
 * <ip address> is in dotted decimal notation, like "192.168.1.1", as output
   from `inet_ntoa`
 * <workgroup> and <host name> are the netbios workgroup and host name
@@ -34,10 +38,25 @@ where:
 This mode never returns, it assumes the caller will simply kill it
 after some timeout
 
-roon_smb_watcher shares <server> [workgroup] [username] [password]
+roon_smb_watcher shares <name type> <server> [workgroup] [username] [password]
 this is meant as a utility used by Roon to list shares on a particular
 host.
 
 Parameters:
-* <server> can be either a netbios/dns name, or an 
+* <name type> is either "IP" or "NAME".
+* <server> can be either a netbios/dns name, or an ip address like "192.168.1.1"
+* workgroup, username, and password are all optional.  if only one extra argument
+  is provided, it's treated as a username, if two they are treated as username and
+  password in that order
 
+Prints one line of login status information, one of these two:
+SUCCESS [SMB1] [SMB2] [ISGUEST]
+ERROR <text error message>
+
+Then prints one line per share found, formatted like:
+<share name> [type:<share type>] [type:<share type>]
+
+where:
+* <share name> is the name of the share
+* `type:<share type>` may occur 0 or more times
+* <share type> is a SMB share type as reported by the server

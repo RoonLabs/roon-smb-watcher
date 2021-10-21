@@ -1,12 +1,13 @@
-/* Netbios Discover */
-/* originally copied from libdsm example code */
+#include <inttypes.h>
+#include <stdarg.h>
+#include <stdbool.h>
 #include <stdio.h>
+
 #ifdef PLATFORM_WINDOWS
 #include <windows.h>
 
 #else
 
-#include <inttypes.h>
 #include <poll.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -26,21 +27,44 @@
 #include "smb2/libsmb2-raw.h"
 #endif
 
-struct credentials {
+#include "roon_error.h"
+
+enum watcher_mode {
+    MODE_TEST,
+    MODE_HOSTS,
+    MODE_SHARES,
+};
+
+struct watcher_options {
     char *workgroup;
     char *username;
     char *password;
+    enum watcher_mode mode;
 };
 
-static void print_entry(const char *what, void *p_opaque,
-                        netbios_ns_entry *entry) {
+typedef struct watcher_options watcher_options;
+
+static void print_if(bool print, const char *fmt, ...) {
+    if (print) {
+        va_list args;
+        va_start(args, fmt);
+        printf(fmt, args);
+        va_end(args);
+    }
+}
+
+static void print_entry(const char *what,
+                        netbios_ns_entry *entry,
+                        watcher_options *options) {
     struct in_addr addr;
 
     addr.s_addr = netbios_ns_entry_ip(entry);
-
-    printf("%s(%p): Ip: %s, name: %s/%s<%x>\n",
+    char *format = "%s: Ip: %s %s/%s<%x>\n";
+    if (options->mode == MODE_HOSTS) {
+        format = "%s %s %s/%s\n";
+    }
+    printf(format,
            what,
-           p_opaque,
            inet_ntoa(addr),    netbios_ns_entry_group(entry),
            netbios_ns_entry_name(entry),
            netbios_ns_entry_type(entry));
@@ -48,8 +72,9 @@ static void print_entry(const char *what, void *p_opaque,
 
 #ifndef PLATFORM_WINDOWS
 static int list_shares_smb1(void *p_opaque,
-                            netbios_ns_entry *entry) {
-    struct credentials *creds = (struct credentials *)p_opaque;
+                            char *name,
+                            uint32_t ip) {
+    struct watcher_options *options = (struct watcher_options *)p_opaque;
     struct in_addr  addr;
     smb_session   *session;
     smb_tid     tid;
@@ -59,25 +84,25 @@ static int list_shares_smb1(void *p_opaque,
     if (session == NULL)
         return 1;
 
-    addr.s_addr = netbios_ns_entry_ip(entry);
+    addr.s_addr = ip;
 
-    int session_ret = smb_session_connect(session, netbios_ns_entry_name(entry), 
-                                        addr.s_addr, SMB_TRANSPORT_TCP);
+    int session_ret = smb_session_connect(session, name, 
+                                          addr.s_addr, SMB_TRANSPORT_TCP);
     if (session_ret) {
-        printf("    Unable to connect to host %s\n", inet_ntoa(addr));
+        print_if((options->mode == MODE_TEST), "    Unable to connect to host %s\n", inet_ntoa(addr));
         return session_ret;
     }
 
-    smb_session_set_creds(session, creds->workgroup, creds->username, creds->password);
+    smb_session_set_creds(session, options->workgroup, options->username, options->password);
     int login_ret = smb_session_login(session);
     if (login_ret == DSM_SUCCESS) {
         if (smb_session_is_guest(session))
-            printf("    Logged in as GUEST\n");
+            print_if((options->mode == MODE_TEST), "    Logged in as GUEST\n");
         else
-            printf("    Successfully logged in\n");
+            print_if((options->mode == MODE_TEST), "    Successfully logged in\n");
     }
     else {
-        printf("    Auth failed %s\n", inet_ntoa(addr));
+        print_if((options->mode == MODE_TEST), "    Auth failed %s\n", inet_ntoa(addr));
         return login_ret;
     }
 
@@ -85,22 +110,30 @@ static int list_shares_smb1(void *p_opaque,
     size_t count;
     int list_ret = smb_share_get_list(session, &list, &count);
     if (list_ret == DSM_SUCCESS) {
-        printf("        share count: %i\n", count);
+        print_if((options->mode == MODE_TEST), "        share count: %i\n", count);
     }
     else {
-        printf("    Unable to connect to share, ret value: %i\n", list_ret);
+        print_if((options->mode == MODE_TEST), "    Unable to connect to share, ret value: %i\n", list_ret);
         if (list_ret == DSM_ERROR_NT) {
             uint32_t nt_status = smb_session_get_nt_status(session);
-            printf("    nt_status: %x\n", nt_status);
+            print_if((options->mode == MODE_TEST), "    nt_status: %x\n", nt_status);
         }
       
         return list_ret;
     }
 
-    for (int i = 0; i < count; i++) {
-        printf("        share name: %s\n", smb_share_list_at(list, i));
+    char *format = "        share name: %s\n";
+    if (options->mode == MODE_SHARES) {
+        format = "%s\n";
+        
+        printf("SUCCESS SMB1");
+        print_if(smb_session_is_guest(session), " ISGUEST");
+        printf("\n");
     }
-  
+    for (int i = 0; i < count; i++) {
+        printf(format, smb_share_list_at(list, i));
+    }
+
     smb_share_list_destroy(list);
     smb_session_destroy(session);
 
@@ -110,40 +143,47 @@ static int list_shares_smb1(void *p_opaque,
 int cb_status;
 
 void se_cb(struct smb2_context *smb2, int status,
-                void *command_data, void *private_data) {
+                void *command_data, void *p_opaque) {
         struct srvsvc_netshareenumall_rep *rep = command_data;
+        struct watcher_options *options = (struct watcher_options *)p_opaque;
         int i;
 
         if (status) {
-                printf("    failed to enumerate shares [%d](%s) %s\n",
+                print_if((options->mode == MODE_TEST), "    failed to enumerate shares [%d](%s) %s\n",
                        status, strerror(-status), smb2_get_error(smb2));
                 cb_status = status;
                 return;
         }
 
-        printf("        share count: %i\n", rep->ctr->ctr1.count);
+        print_if((options->mode == MODE_TEST), "        share count: %i\n", rep->ctr->ctr1.count);
+        char *format = "        share name: %-20s %-20s";
+        char *prefix = "     ";
+        if (options->mode == MODE_SHARES) {
+            format = "%s";
+            prefix = " type:";
+        }
         for (i = 0; i < rep->ctr->ctr1.count; i++) {
-                printf("        share name: %-20s %-20s", rep->ctr->ctr1.array[i].name,
+                printf(format, rep->ctr->ctr1.array[i].name,
                        rep->ctr->ctr1.array[i].comment);
                 if ((rep->ctr->ctr1.array[i].type & 3) == SHARE_TYPE_DISKTREE) {
-                        printf("     DISKTREE");
+                        printf("%sDISKTREE", prefix);
                 }
                 if ((rep->ctr->ctr1.array[i].type & 3) == SHARE_TYPE_PRINTQ) {
-                        printf("     PRINTQ");
+                        printf("%sPRINTQ", prefix);
                 }
                 if ((rep->ctr->ctr1.array[i].type & 3) == SHARE_TYPE_DEVICE) {
-                        printf("     DEVICE");
+                        printf("%sDEVICE", prefix);
                 }
                 if ((rep->ctr->ctr1.array[i].type & 3) == SHARE_TYPE_IPC) {
-                        printf("     IPC");
+                        printf("%sIPC", prefix);
                 }
                 if (rep->ctr->ctr1.array[i].type & SHARE_TYPE_TEMPORARY) {
-                        printf("     TEMPORARY");
+                        printf("%sTEMPORARY", prefix);
                 }
                 if (rep->ctr->ctr1.array[i].type & SHARE_TYPE_HIDDEN) {
-                        printf("     HIDDEN");
+                        printf("%sHIDDEN", prefix);
                 }
-                printf("    \n");
+                printf("\n");
         }
 
         smb2_free_data(smb2, rep);
@@ -152,8 +192,8 @@ void se_cb(struct smb2_context *smb2, int status,
 }
 
 static int list_shares_smb2(void *p_opaque,
-                            netbios_ns_entry *entry) {
-    struct credentials *creds = (struct credentials *)p_opaque;
+                            char *name) {
+    struct watcher_options *options = (struct watcher_options *)p_opaque;
     struct smb2_context *smb2;
     struct smb2_url *url;
     struct pollfd pfd;
@@ -166,25 +206,27 @@ static int list_shares_smb2(void *p_opaque,
 
     cb_status = 1;
 
-    struct in_addr addr;
-    addr.s_addr = netbios_ns_entry_ip(entry);
-    char *server = inet_ntoa(addr);
     smb2_set_security_mode(smb2, SMB2_NEGOTIATE_SIGNING_ENABLED);
+    if (options->username[0] != '\0') smb2_set_user(smb2, options->username);
+    if (options->password[0] != '\0') smb2_set_password(smb2, options->password);
 
-    if (creds->username[0] != '\0') smb2_set_user(smb2, creds->username);
-    if (creds->password[0] != '\0') smb2_set_password(smb2, creds->password);
-
-    int connect_ret = smb2_connect_share(smb2, server, "IPC$", NULL);
+    int connect_ret = smb2_connect_share(smb2, name, "IPC$", NULL);
     if (connect_ret < 0) {
         printf("    Failed to connect to IPC$. %s\n",
                smb2_get_error(smb2));
         return -connect_ret;
     }
 
-    int enum_ret = smb2_share_enum_async(smb2, se_cb, NULL);
+    int enum_ret = smb2_share_enum_async(smb2, se_cb, p_opaque);
     if (enum_ret != 0) {
         printf("    smb2_share_enum failed. %s\n", smb2_get_error(smb2));
         return -enum_ret;
+    }
+
+    if (options->mode == MODE_SHARES) {
+        printf("SUCCESS SMB2");
+        print_if((smb_session_is_guest(smb2) == 1), " ISGUEST");
+        printf("\n");
     }
 
     while (cb_status > 0) {
@@ -211,88 +253,87 @@ static int list_shares_smb2(void *p_opaque,
         
     return -cb_status;
 }
-static int list_shares(void *p_opaque,
-                       netbios_ns_entry *entry) {
-    struct credentials *creds = (struct credentials *)p_opaque;
-    struct credentials *guest_creds = malloc(sizeof(struct credentials));
-    guest_creds->workgroup = "";
-    guest_creds->username  = "Guest";
-    guest_creds->password  = "password";
+static int list_shares(watcher_options *options,
+                       char* name,
+                       uint32_t ip) {
+    bool test_mode = (options->mode == MODE_TEST);
+    int ret = ROON_SMB_SUCCESS;
 
-    printf("  attempting to list shares over smb1 as guest\n");
-    int smb1_ret = list_shares_smb1(guest_creds, entry);
-    printf("  return value: %d\n", smb1_ret);
+    print_if(test_mode, "  attempting to list shares over smb2 with credentials\n");
+    ret = list_shares_smb2(options, name);
+    print_if(test_mode, "  return value: %d\n", ret);
+    if ((ret == ROON_SMB_SUCCESS) && (options->mode == MODE_SHARES)) return ROON_SMB_SUCCESS;
 
-    if (smb1_ret != 0) {
-        printf("  attempting to list shares over smb2 as guest\n");
-        int smb2_ret = list_shares_smb2(guest_creds, entry);
-        printf("  return value: %d\n", smb2_ret);
+    print_if(test_mode, "  attempting to list shares over smb2 with credentials\n");
+    ret = list_shares_smb1(options, name, ip);
+    print_if(test_mode, "  return value: %d\n", ret);   
+    if ((ret == ROON_SMB_SUCCESS) && (options->mode == MODE_SHARES)) return ROON_SMB_SUCCESS;
+    
+    if (test_mode) {
+        struct watcher_options *guest_creds = malloc(sizeof(struct watcher_options));
+        guest_creds->mode      = options->mode;
+        guest_creds->workgroup = "";
+        guest_creds->username  = "Guest";
+        guest_creds->password  = "password";
+
+        print_if(test_mode, "  attempting to list shares over smb2 as guest\n");
+        ret = list_shares_smb2(guest_creds, name);
+        print_if(test_mode, "  return value: %d\n", ret);
+        if (ret == ROON_SMB_SUCCESS) return ROON_SMB_SUCCESS;
+        
+        print_if(test_mode, "  attempting to list shares over smb1 as guest\n");
+        ret = list_shares_smb1(guest_creds, name, ip);
+        print_if(test_mode, "  return value: %d\n", ret);
     }
-
-    if (creds->username[0] != '\0') {
-        printf("  attempting to list shares over smb1 with credentials\n");
-        smb1_ret = list_shares_smb1(creds, entry);
-        printf("  return value: %d\n", smb1_ret);
-
-        if (smb1_ret != 0) {
-            printf("  attempting to list shares over smb2 with credentials\n");
-            int smb2_ret = list_shares_smb2(creds, entry);
-            printf("  return value: %d\n", smb2_ret);
-        }
-    }
+    return ret;
 }
 #endif
 
 static void on_entry_added(void *p_opaque,
                            netbios_ns_entry *entry) {
-    print_entry("added", p_opaque, entry);
+    struct watcher_options *options = (struct watcher_options *)p_opaque;
+    print_entry("added", entry, options);
 #ifndef PLATFORM_WINDOWS
-    int list_ret = list_shares(p_opaque, entry);
+    if (options->mode == MODE_TEST) {
+        int list_ret = list_shares(options, netbios_ns_entry_name(entry), netbios_ns_entry_ip(entry));
+    }
 #endif
 }
 
 static void on_entry_removed(void *p_opaque,
                              netbios_ns_entry *entry) {
-    print_entry("removed", p_opaque, entry);
+    struct watcher_options *options = (struct watcher_options *)p_opaque;
+    print_entry("removed", entry, options);
 }
 
-int main(int argc, char** argv) {
-    struct credentials *args = malloc(sizeof(struct credentials));
-    if (argc >= 4) {
-        args->workgroup = argv[1];
-        args->username  = argv[2];
-        args->password  = argv[3];
-    } else if (argc == 3) {
-        args->workgroup = "";
-        args->username  = argv[1];
-        args->password  = argv[2];
-    } else if (argc == 2) {
-        args->workgroup = "";
-        args->username  = argv[1];
-        args->password  = "";
-    } else if (argc == 1) {
-        args->workgroup = "";
-        args->username  = "";
-        args->password  = "";
-    }
-  
+static int usage() {
+    printf("Usage:\n");
+    printf("roon_smb_watcher test [workgroup] [username] [password]\n");
+    printf("roon_smb_watcher hosts [timeout]\n");
+    printf("roon_smb_watcher shares <name type> <server> [workgroup] [username] [password]\n");
+    printf("\n");
+    printf("see README file for details\n");
+    return ROON_SMB_NOT_SUPPORTED;
+}
+
+static int scan_hosts(watcher_options *options) {
     netbios_ns *ns;
     netbios_ns_discover_callbacks callbacks;
 
     ns = netbios_ns_new();
 
-    callbacks.p_opaque = (void*)args;
+    callbacks.p_opaque = (void*)options;
     callbacks.pf_on_entry_added = on_entry_added;
     callbacks.pf_on_entry_removed = on_entry_removed;
 
-    printf("Discovering...\nPress Enter to quit\n");
+    if (options->mode == MODE_TEST) printf("Discovering...\nPress Enter to quit\n");
     int ret = netbios_ns_discover_start(ns,
-                                        4, // broadcast every 4 sec
+                                        4,
                                         &callbacks);
-    printf("return code from start: %i\n", ret);
+    if (options->mode == MODE_TEST) printf("return code from start: %i\n", ret);
     if (ret != 0) {
-        fprintf(stderr, "Error while discovering local network\n");
-        exit(42);
+        printf("ERROR Error while discovering local network\n");
+        exit(ret);
     }
 
     getchar();
@@ -300,4 +341,91 @@ int main(int argc, char** argv) {
     netbios_ns_discover_stop(ns);
 
     return (0);
+}
+
+static int run_test(watcher_options *options) {
+    return scan_hosts(options);
+}
+
+static int run_hosts(intmax_t freq, watcher_options *options) {    
+    return scan_hosts(options);
+}
+
+static int run_shares(char *name_type, char *name_or_ip, watcher_options *options) {
+    char* name;
+    uint32_t ip;
+    
+    netbios_ns *ns;
+    ns = netbios_ns_new();
+    
+    if (strcmp(name_type, "IP") == 0) {
+        struct in_addr addr;
+        int parse_ret = inet_pton(AF_INET, name_or_ip, &addr);
+        ip = addr.s_addr;
+        name = netbios_ns_inverse(ns, ip);
+        if (name == NULL) {
+            name = name_or_ip;
+        }
+    } else if (strcmp(name_type, "NAME") == 0) {
+        name = name_or_ip;
+        int fs_result = netbios_ns_resolve(ns, name_or_ip, NETBIOS_FILESERVER, &ip);
+        if (fs_result != 0) {
+            fs_result == netbios_ns_resolve(ns, name_or_ip, NETBIOS_WORKSTATION, &ip);
+            if (fs_result != 0) {
+                ip = 0;
+            }
+        }
+    }
+
+    return list_shares(options, name, ip);
+}
+
+static void set_credentials(int argc, char** argv, watcher_options *options) {
+    int offset = 0;
+    if (options->mode == MODE_SHARES) {
+        offset = 2;
+    }
+    if (argc >= (4 + offset)) {
+        options->workgroup = argv[1 + offset];
+        options->username  = argv[2 + offset];
+        options->password  = argv[3 + offset];
+    } else if (argc == (3 + offset)) {
+        options->workgroup = "";
+        options->username  = argv[1 + offset];
+        options->password  = argv[2 + offset];
+    } else if (argc == (2 + offset)) {
+        options->workgroup = "";
+        options->username  = argv[1 + offset];
+        options->password  = "";
+    } else if (argc == (1 + offset)) {
+        options->workgroup = "";
+        options->username  = "";
+        options->password  = "";
+    }
+}
+
+int main(int argc, char** argv) {
+    if (argc == 1) return usage();
+
+    struct watcher_options *options = malloc(sizeof(struct watcher_options));
+
+    if (strcmp(argv[1], "test") == 0) {
+        if (argc > 5) return usage();
+        options->mode = MODE_TEST;
+        set_credentials(argc, argv, options);
+        return run_test(options);
+    } else if (strcmp(argv[1], "hosts") == 0) {
+        if (argc > 3) return usage();
+        options->mode = MODE_HOSTS;
+        intmax_t freq = 0;
+        if (argc == 3) freq = strtoimax(argv[2], NULL, 10);
+        return run_hosts(freq, options);
+    } else if (strcmp(argv[1], "shares") == 0) {
+        if ((argc < 4) || (argc > 7)) return usage();
+        options->mode = MODE_SHARES;
+        set_credentials(argc, argv, options);
+        return run_shares(argv[2], argv[3], options);
+    } else {
+        return usage();
+    }
 }

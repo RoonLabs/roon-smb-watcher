@@ -55,7 +55,7 @@ watcher_sources = [
   'src/roon_watcher.c'
  ]
 
-includes = include_directories('.', 'subprojects/libdsm/include')
+includes = include_directories('.', 'include', 'subprojects/libdsm/include')
 
 watcherobj = executable('roon_smb_watcher', watcher_sources,
                         #build_rpath: meson.source_root() + '/lib',
