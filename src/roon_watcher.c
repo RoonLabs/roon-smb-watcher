@@ -48,7 +48,7 @@ static void print_if(bool print, const char *fmt, ...) {
     if (print) {
         va_list args;
         va_start(args, fmt);
-        printf(fmt, args);
+        fprintf(stdout, fmt, args);
         va_end(args);
     }
 }
@@ -63,11 +63,11 @@ static void print_entry(const char *what,
     if (options->mode == MODE_HOSTS) {
         format = "%s %s %s/%s\n";
     }
-    printf(format,
-           what,
-           inet_ntoa(addr),    netbios_ns_entry_group(entry),
-           netbios_ns_entry_name(entry),
-           netbios_ns_entry_type(entry));
+    fprintf(stdout, format,
+            what,
+            inet_ntoa(addr),    netbios_ns_entry_group(entry),
+            netbios_ns_entry_name(entry),
+            netbios_ns_entry_type(entry)); fflush(stdout);
 }
 
 #ifndef PLATFORM_WINDOWS
@@ -126,12 +126,12 @@ static int list_shares_smb1(void *p_opaque,
     if (options->mode == MODE_SHARES) {
         format = "%s\n";
         
-        printf("SUCCESS SMB1");
+        fprintf(stdout, "SUCCESS SMB1");
         print_if(smb_session_is_guest(session), " ISGUEST");
-        printf("\n");
+        fprintf(stdout, "\n"); fflush(stdout);
     }
     for (int i = 0; i < count; i++) {
-        printf(format, smb_share_list_at(list, i));
+        fprintf(stdout, format, smb_share_list_at(list, i)); fflush(stdout);
     }
 
     smb_share_list_destroy(list);
@@ -166,24 +166,24 @@ void se_cb(struct smb2_context *smb2, int status,
                 printf(format, rep->ctr->ctr1.array[i].name,
                        rep->ctr->ctr1.array[i].comment);
                 if ((rep->ctr->ctr1.array[i].type & 3) == SHARE_TYPE_DISKTREE) {
-                        printf("%sDISKTREE", prefix);
+                        fprintf(stdout, "%sDISKTREE", prefix);
                 }
                 if ((rep->ctr->ctr1.array[i].type & 3) == SHARE_TYPE_PRINTQ) {
-                        printf("%sPRINTQ", prefix);
+                        fprintf(stdout, "%sPRINTQ", prefix);
                 }
                 if ((rep->ctr->ctr1.array[i].type & 3) == SHARE_TYPE_DEVICE) {
-                        printf("%sDEVICE", prefix);
+                        fprintf(stdout, "%sDEVICE", prefix);
                 }
                 if ((rep->ctr->ctr1.array[i].type & 3) == SHARE_TYPE_IPC) {
-                        printf("%sIPC", prefix);
+                        fprintf(stdout, "%sIPC", prefix);
                 }
                 if (rep->ctr->ctr1.array[i].type & SHARE_TYPE_TEMPORARY) {
-                        printf("%sTEMPORARY", prefix);
+                        fprintf(stdout, "%sTEMPORARY", prefix);
                 }
                 if (rep->ctr->ctr1.array[i].type & SHARE_TYPE_HIDDEN) {
-                        printf("%sHIDDEN", prefix);
+                        fprintf(stdout, "%sHIDDEN", prefix);
                 }
-                printf("\n");
+                fprintf(stdout, "\n"); fflush(stdout);
         }
 
         smb2_free_data(smb2, rep);
@@ -200,7 +200,7 @@ static int list_shares_smb2(void *p_opaque,
 
     smb2 = smb2_init_context();
     if (smb2 == NULL) {
-        printf("    Failed to init context\n");
+        print_if((options->mode == MODE_TEST), "    Failed to init context\n");
         return 1;
     }
 
@@ -212,21 +212,21 @@ static int list_shares_smb2(void *p_opaque,
 
     int connect_ret = smb2_connect_share(smb2, name, "IPC$", NULL);
     if (connect_ret < 0) {
-        printf("    Failed to connect to IPC$. %s\n",
+        print_if((options->mode == MODE_TEST), "    Failed to connect to IPC$. %s\n",
                smb2_get_error(smb2));
         return -connect_ret;
     }
 
     int enum_ret = smb2_share_enum_async(smb2, se_cb, p_opaque);
     if (enum_ret != 0) {
-        printf("    smb2_share_enum failed. %s\n", smb2_get_error(smb2));
+        print_if((options->mode == MODE_TEST), "    smb2_share_enum failed. %s\n", smb2_get_error(smb2));
         return -enum_ret;
     }
 
     if (options->mode == MODE_SHARES) {
-        printf("SUCCESS SMB2");
+        fprintf(stdout, "SUCCESS SMB2");
         print_if((smb_session_is_guest(smb2) == 1), " ISGUEST");
-        printf("\n");
+        fprintf(stdout, "\n"); fflush(stdout);
     }
 
     while (cb_status > 0) {
@@ -235,14 +235,14 @@ static int list_shares_smb2(void *p_opaque,
 
         int poll_ret = poll(&pfd, 1, 1000);
         if (poll_ret < 0) {
-            printf("    Poll failed");
+            print_if((options->mode == MODE_TEST), "    Poll failed");
             return errno;
         }
         if (pfd.revents == 0) {
             continue;
         }
         if (smb2_service(smb2, pfd.revents) < 0) {
-            printf("    smb2_service failed with : %s\n",
+            print_if((options->mode == MODE_TEST), "    smb2_service failed with : %s\n",
                    smb2_get_error(smb2));
             break;
         }
@@ -307,12 +307,12 @@ static void on_entry_removed(void *p_opaque,
 }
 
 static int usage() {
-    printf("Usage:\n");
-    printf("roon_smb_watcher test [workgroup] [username] [password]\n");
-    printf("roon_smb_watcher hosts [timeout]\n");
-    printf("roon_smb_watcher shares <name type> <server> [workgroup] [username] [password]\n");
-    printf("\n");
-    printf("see README file for details\n");
+    fprintf(stdout, "Usage:\n");
+    fprintf(stdout, "roon_smb_watcher test [workgroup] [username] [password]\n");
+    fprintf(stdout, "roon_smb_watcher hosts [timeout]\n");
+    fprintf(stdout, "roon_smb_watcher shares <name type> <server> [workgroup] [username] [password]\n");
+    fprintf(stdout, "\n");
+    fprintf(stdout, "see README file for details\n");
     return ROON_SMB_NOT_SUPPORTED;
 }
 
@@ -326,13 +326,13 @@ static int scan_hosts(watcher_options *options) {
     callbacks.pf_on_entry_added = on_entry_added;
     callbacks.pf_on_entry_removed = on_entry_removed;
 
-    if (options->mode == MODE_TEST) printf("Discovering...\nPress Enter to quit\n");
+    if (options->mode == MODE_TEST) fprintf(stdout, "Discovering...\nPress Enter to quit\n");
     int ret = netbios_ns_discover_start(ns,
                                         4,
                                         &callbacks);
-    if (options->mode == MODE_TEST) printf("return code from start: %i\n", ret);
+    if (options->mode == MODE_TEST) fprintf(stdout, "return code from start: %i\n", ret);
     if (ret != 0) {
-        printf("ERROR Error while discovering local network\n");
+        fprintf(stdout, "ERROR Error while discovering local network\n");
         exit(ret);
     }
 
