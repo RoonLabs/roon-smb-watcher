@@ -33,24 +33,24 @@ if [ "x`uname -o`" != "xCygwin" ]; then
 fi
 gitclone https://github.com/RoonLabs/libdsm.git libdsm 
 
+if [ "x`uname -o`" != "xCygwin" ]; then
 echo "Building libsmb2"
 echo ================================================================================
 pushd libsmb2
-if [ "x`uname -o`" != "xCygwin" ]; then
     ./bootstrap
     ./configure --disable-werror --without-libkrb5 --prefix=$ROOT/tmp
     make -j8
     make install
     cp $ROOT/tmp/lib/libsmb2.a libsmb2.a
-fi
 popd
+cp libsmb2binary.meson.build subprojects/libsmb2/meson.build
+fi
 
 cd $ROOT
 
 
 echo "Building roon-smb-watcher"
 echo ================================================================================
-cp libsmb2binary.meson.build subprojects/libsmb2/meson.build
 meson setup "$@" build
 pushd build
 ninja
