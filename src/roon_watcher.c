@@ -4,6 +4,7 @@
 #include <stdio.h>
 
 #ifdef PLATFORM_WINDOWS
+#include <winsock2.h>
 #include <windows.h>
 
 #else
@@ -15,10 +16,9 @@
 #include <time.h>
 #include <unistd.h>
 #include <errno.h>
+#include <arpa/inet.h>
 
 #endif
-
-#include <arpa/inet.h>
 
 #include "bdsm.h"
 #ifndef PLATFORM_WINDOWS
@@ -43,6 +43,19 @@ struct watcher_options {
 };
 
 typedef struct watcher_options watcher_options;
+
+#ifdef PLATFORM_WINDOWS
+/*
+static int inet_aton(const char *cp, struct in_addr *inp) {
+    unsigned long ip = in_addr(cp);
+    if (ip == INADDR_NONE) {
+        return -1;
+    } else {
+        inp->S_addr
+    }
+}
+*/
+#endif
 
 static void print_if(bool print, const char *fmt, ...) {
     if (print) {
@@ -360,9 +373,11 @@ static int run_shares(char *name_type, char *name_or_ip, watcher_options *option
     ns = netbios_ns_new();
     
     if (strcmp(name_type, "IP") == 0) {
-        struct in_addr addr;
-        int parse_ret = inet_pton(AF_INET, name_or_ip, &addr);
-        ip = addr.s_addr;
+//        struct in_addr addr;
+//        addr.s_addr = 
+//        int parse_ret = inet_aton(AF_INET, name_or_ip, &addr);
+//        ip = addr.s_addr;
+        ip = inet_addr(name_or_ip);
         name = netbios_ns_inverse(ns, ip);
         if (name == NULL) {
             name = name_or_ip;
