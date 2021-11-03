@@ -351,6 +351,7 @@ static int run_hosts(intmax_t freq, watcher_options *options) {
     return scan_hosts(options);
 }
 
+#ifndef PLATFORM_WINDOWS
 static int run_shares(char *name_type, char *name_or_ip, watcher_options *options) {
     char* name;
     uint32_t ip;
@@ -379,6 +380,7 @@ static int run_shares(char *name_type, char *name_or_ip, watcher_options *option
 
     return list_shares(options, name, ip);
 }
+#endif
 
 static void set_credentials(int argc, char** argv, watcher_options *options) {
     int offset = 0;
@@ -420,11 +422,13 @@ int main(int argc, char** argv) {
         intmax_t freq = 0;
         if (argc == 3) freq = strtoimax(argv[2], NULL, 10);
         return run_hosts(freq, options);
+#ifndef PLATFORM_WINDOWS        
     } else if (strcmp(argv[1], "shares") == 0) {
         if ((argc < 4) || (argc > 7)) return usage();
         options->mode = MODE_SHARES;
         set_credentials(argc, argv, options);
         return run_shares(argv[2], argv[3], options);
+#endif
     } else {
         return usage();
     }
