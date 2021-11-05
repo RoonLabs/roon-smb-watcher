@@ -43,7 +43,7 @@ pushd libsmb2
     make install
     cp $ROOT/tmp/lib/libsmb2.a libsmb2.a
 popd
-cp libsmb2binary.meson.build subprojects/libsmb2/meson.build
+cp $ROOT/libsmb2binary.meson.build $ROOT/subprojects/libsmb2/meson.build
 fi
 
 cd $ROOT

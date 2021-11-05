@@ -343,6 +343,7 @@ static int scan_hosts(watcher_options *options) {
     int ret = netbios_ns_discover_start(ns,
                                         4,
                                         &callbacks);
+    printf("after ns_discover_start\n");
     if (options->mode == MODE_TEST) fprintf(stdout, "return code from start: %i\n", ret);
     if (ret != 0) {
         fprintf(stdout, "ERROR Error while discovering local network\n");
