@@ -56,6 +56,7 @@ endif
 if host_machine.system() != 'windows' and host_machine.system() != 'cygwin'
   deps += subproject('libsmb2').get_variable('bin_dep')
   deps += dependency('threads')
+  deps += find_library('libwinpthread', static: true)
 endif
 
 watcher_sources = [
