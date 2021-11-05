@@ -51,7 +51,9 @@ cd $ROOT
 
 echo "Building roon-smb-watcher"
 echo ================================================================================
-meson setup "$@" build
+WIPE_ARG=""
+if [ -d build ]; then WIPE_ARG="--wipe"; fi
+meson setup "$@" $WIPE_ARG build
 pushd build
 ninja
 popd
