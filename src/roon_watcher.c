@@ -4,6 +4,7 @@
 #include <stdio.h>
 
 #ifdef PLATFORM_WINDOWS
+#define WIN32_LEAN_AND_MEAN
 #include <winsock2.h>
 #include <windows.h>
 
@@ -333,6 +334,11 @@ static int scan_hosts(watcher_options *options) {
     netbios_ns *ns;
     netbios_ns_discover_callbacks callbacks;
 
+#ifdef PLATFORM_WINDOWS
+    WSADATA wsaData;
+    WSAStartup(MAKEWORD(2, 2), &wsaData);
+#endif
+    
     ns = netbios_ns_new();
 
     callbacks.p_opaque = (void*)options;
