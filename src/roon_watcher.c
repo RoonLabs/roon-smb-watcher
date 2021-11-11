@@ -22,6 +22,8 @@
 #endif
 
 #include "bdsm.h"
+#include "smb_session.h"
+#include "netbios_session.h"
 #ifndef PLATFORM_WINDOWS
 #include "smb2/smb2.h"
 #include "smb2/libsmb2.h"
@@ -45,26 +47,12 @@ struct watcher_options {
 
 typedef struct watcher_options watcher_options;
 
-#ifdef PLATFORM_WINDOWS
-/*
-static int inet_aton(const char *cp, struct in_addr *inp) {
-    unsigned long ip = in_addr(cp);
-    if (ip == INADDR_NONE) {
-        return -1;
-    } else {
-        inp->S_addr
-    }
-}
-*/
-#endif
-
 static void print_if(bool print, const char *fmt, ...) {
-    if (print) {
-        va_list args;
-        va_start(args, fmt);
-        fprintf(stdout, fmt, args);
-        va_end(args);
-    }
+    FILE *fd = print ? stdout : stderr;
+    va_list args;
+    va_start(args, fmt);
+    vfprintf(fd, fmt, args);
+    va_end(args);
 }
 
 static void print_entry(const char *what,
@@ -85,6 +73,11 @@ static void print_entry(const char *what,
 }
 
 #ifndef PLATFORM_WINDOWS
+static int get_nb_state(smb_session *session) {
+    netbios_session *nb_s = (netbios_session*)session->transport.session;
+    return -(nb_s->state);
+}
+
 static int list_shares_smb1(void *p_opaque,
                             char *name,
                             uint32_t ip) {
@@ -96,15 +89,22 @@ static int list_shares_smb1(void *p_opaque,
 
     session = smb_session_new();
     if (session == NULL)
-        return 1;
+        return ROON_SMB_UNEXPECTED_ERROR;
 
     addr.s_addr = ip;
 
     int session_ret = smb_session_connect(session, name, 
                                           addr.s_addr, SMB_TRANSPORT_TCP);
     if (session_ret) {
-        print_if((options->mode == MODE_TEST), "    Unable to connect to host %s\n", inet_ntoa(addr));
-        return session_ret;
+        print_if((options->mode == MODE_TEST), "    Unable to connect to host %s, session_ret: %d, netbios state: %d\n", inet_ntoa(addr), session_ret, get_nb_state(session));
+        int err = get_nb_state(session);
+        if ((err == ENETUNREACH) || (err == EHOSTUNREACH)) {
+            return ROON_SMB_NOT_FOUND;
+        } else if (err == ECONNRESET) {
+            return ROON_SMB_PROTOCOL_ERROR;
+        } else {
+            return ROON_SMB_NETWORK_ERROR;
+        }
     }
 
     smb_session_set_creds(session, options->workgroup, options->username, options->password);
@@ -114,10 +114,20 @@ static int list_shares_smb1(void *p_opaque,
             print_if((options->mode == MODE_TEST), "    Logged in as GUEST\n");
         else
             print_if((options->mode == MODE_TEST), "    Successfully logged in\n");
-    }
-    else {
-        print_if((options->mode == MODE_TEST), "    Auth failed %s\n", inet_ntoa(addr));
-        return login_ret;
+    } else {
+        print_if((options->mode == MODE_TEST), "    Auth failed %s, nt error: %x\n", inet_ntoa(addr), smb_session_get_nt_status(session));
+        if (login_ret == DSM_ERROR_NT) {
+            int nt_status = smb_session_get_nt_status(session);
+            if ((nt_status == NT_STATUS_LOGON_FAILURE) || (nt_status == NT_STATUS_ACCESS_DENIED)) {
+                return ROON_SMB_UNAUTHORIZED;
+            } else {
+                return ROON_SMB_NETWORK_ERROR;
+            }
+        } else if (login_ret == DSM_ERROR_NETWORK) {
+            return ROON_SMB_NETWORK_ERROR;
+        } else {
+            return ROON_SMB_UNEXPECTED_ERROR;
+        }
     }
 
     smb_share_list list;
@@ -133,7 +143,7 @@ static int list_shares_smb1(void *p_opaque,
             print_if((options->mode == MODE_TEST), "    nt_status: %x\n", nt_status);
         }
       
-        return list_ret;
+        return ROON_SMB_NETWORK_ERROR;
     }
 
     char *format = "        share name: %s\n";
@@ -226,15 +236,20 @@ static int list_shares_smb2(void *p_opaque,
 
     int connect_ret = smb2_connect_share(smb2, name, "IPC$", NULL);
     if (connect_ret < 0) {
-        print_if((options->mode == MODE_TEST), "    Failed to connect to IPC$. %s\n",
-               smb2_get_error(smb2));
-        return -connect_ret;
+        print_if((options->mode == MODE_TEST), "    Failed to connect to IPC$. rc: %d, msg: %s\n",
+                 connect_ret, smb2_get_error(smb2));
+        int err = -connect_ret;
+        if ((err == ECONNREFUSED) || (err == EACCES)) {
+            return ROON_SMB_UNAUTHORIZED;
+        } else {
+            return ROON_SMB_NETWORK_ERROR;
+        }
     }
 
     int enum_ret = smb2_share_enum_async(smb2, se_cb, p_opaque);
     if (enum_ret != 0) {
         print_if((options->mode == MODE_TEST), "    smb2_share_enum failed. %s\n", smb2_get_error(smb2));
-        return -enum_ret;
+        return ROON_SMB_NETWORK_ERROR;
     }
 
     if (options->mode == MODE_SHARES) {
@@ -249,14 +264,15 @@ static int list_shares_smb2(void *p_opaque,
 
         int poll_ret = poll(&pfd, 1, 1000);
         if (poll_ret < 0) {
-            print_if((options->mode == MODE_TEST), "    Poll failed");
-            return errno;
+            int err = errno;
+            print_if((options->mode == MODE_TEST), "    Poll failed, errno: %d", err);
+            return ROON_SMB_NETWORK_ERROR;
         }
         if (pfd.revents == 0) {
             continue;
         }
         if (smb2_service(smb2, pfd.revents) < 0) {
-            print_if((options->mode == MODE_TEST), "    smb2_service failed with : %s\n",
+            print_if((options->mode == MODE_TEST), "    roon smb2_service failed with : %s\n",
                    smb2_get_error(smb2));
             break;
         }
@@ -265,24 +281,26 @@ static int list_shares_smb2(void *p_opaque,
     smb2_disconnect_share(smb2);
     smb2_destroy_context(smb2);
         
-    return -cb_status;
+    return ROON_SMB_NETWORK_ERROR;
 }
+
 static int list_shares(watcher_options *options,
                        char* name,
                        uint32_t ip) {
     bool test_mode = (options->mode == MODE_TEST);
-    int ret = ROON_SMB_SUCCESS;
+    int smb1_ret = ROON_SMB_SUCCESS;
+    int smb2_ret = ROON_SMB_SUCCESS;
 
     print_if(test_mode, "  attempting to list shares over smb2 with credentials\n");
-    ret = list_shares_smb2(options, name);
-    print_if(test_mode, "  return value: %d\n", ret);
-    if ((ret == ROON_SMB_SUCCESS) && (options->mode == MODE_SHARES)) return ROON_SMB_SUCCESS;
+    smb2_ret = list_shares_smb2(options, name);
+    print_if(test_mode, "  return value: %d\n", smb2_ret);
+    if ((smb2_ret == ROON_SMB_SUCCESS) && (options->mode == MODE_SHARES)) return ROON_SMB_SUCCESS;
 
-    print_if(test_mode, "  attempting to list shares over smb2 with credentials\n");
-    ret = list_shares_smb1(options, name, ip);
-    print_if(test_mode, "  return value: %d\n", ret);   
-    if ((ret == ROON_SMB_SUCCESS) && (options->mode == MODE_SHARES)) return ROON_SMB_SUCCESS;
-    
+    print_if(test_mode, "  attempting to list shares over smb1 with credentials\n");
+    smb1_ret = list_shares_smb1(options, name, ip);
+    print_if(test_mode, "  return value: %d\n", smb1_ret);
+    if ((smb1_ret == ROON_SMB_SUCCESS) && (options->mode == MODE_SHARES)) return ROON_SMB_SUCCESS;
+
     if (test_mode) {
         struct watcher_options *guest_creds = malloc(sizeof(struct watcher_options));
         guest_creds->mode      = options->mode;
@@ -291,15 +309,24 @@ static int list_shares(watcher_options *options,
         guest_creds->password  = "password";
 
         print_if(test_mode, "  attempting to list shares over smb2 as guest\n");
-        ret = list_shares_smb2(guest_creds, name);
-        print_if(test_mode, "  return value: %d\n", ret);
-        if (ret == ROON_SMB_SUCCESS) return ROON_SMB_SUCCESS;
+        smb2_ret = list_shares_smb2(guest_creds, name);
+        print_if(test_mode, "  return value: %d\n", smb2_ret);
+        if (smb2_ret == ROON_SMB_SUCCESS) return ROON_SMB_SUCCESS;
         
         print_if(test_mode, "  attempting to list shares over smb1 as guest\n");
-        ret = list_shares_smb1(guest_creds, name, ip);
-        print_if(test_mode, "  return value: %d\n", ret);
+        smb1_ret = list_shares_smb1(guest_creds, name, ip);
+        print_if(test_mode, "  return value: %d\n", smb1_ret);
     }
-    return ret;
+
+    if (smb1_ret == smb2_ret) {
+        return smb1_ret;
+    } else if ((smb2_ret == ROON_SMB_NOT_FOUND) || (smb1_ret == ROON_SMB_NOT_FOUND)) {
+        return ROON_SMB_NOT_FOUND;
+    } else if ((smb2_ret == ROON_SMB_UNAUTHORIZED) || (smb1_ret == ROON_SMB_UNAUTHORIZED)) {
+        return ROON_SMB_UNAUTHORIZED;
+    } else {
+        return smb2_ret;
+    }
 }
 #endif
 
