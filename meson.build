@@ -18,8 +18,6 @@ conf_data.set('_DEFAULT_SOURCE', 1)
 
 cc = meson.get_compiler('c')
 
-test_args = ''
-
 warning_arguments = [
   '-Wall',
   '-Wsign-compare',
@@ -31,15 +29,15 @@ add_project_arguments(warning_arguments, language: 'c')
 
 # Check functions
 if host_machine.system() == 'linux'
-  test_args += '-D_GNU_SOURCE'
   add_project_arguments('-DPLATFORM_LINUX', language: 'c')
 elif host_machine.system() == 'darwin'
   add_project_arguments('-DPLATFORM_MACOSX', language: 'c')
 else
   if host_machine.system() == 'windows'
-    add_project_arguments('-DPLATFORM_WINDOWS', language: 'c')
+    # mingw declares asprintf only under _GNU_SOURCE, and GCC 14 rejects the implicit declaration.
+    add_project_arguments('-DPLATFORM_WINDOWS', '-D_GNU_SOURCE', language: 'c')
   elif host_machine.system() == 'cygwin'
-    add_project_arguments('-DPLATFORM_WINDOWS', language: 'c')
+    add_project_arguments('-DPLATFORM_WINDOWS', '-D_GNU_SOURCE', language: 'c')
   endif
 endif
 
@@ -54,8 +52,8 @@ else
   deps += cc.find_library('Mpr', static: true)
   deps += cc.find_library('Netapi32', static: true)
   deps += cc.find_library('Advapi32', static: true)
-  ws_lib = meson.get_cross_property('ws_lib', false)
-  if (ws_lib != false)
+  ws_lib = meson.get_cross_property('ws_lib', '')
+  if ws_lib != ''
     deps += cc.find_library(ws_lib)
   endif
 endif
