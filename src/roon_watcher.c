@@ -568,7 +568,6 @@ static void on_entry_removed(void *p_opaque,
 static int usage() {
     fprintf(stdout, "Usage:\n");
     fprintf(stdout, "roon_smb_watcher test [workgroup] [username] [password]\n");
-    fprintf(stdout, "roon_smb_watcher test --stdin\n");
     fprintf(stdout, "roon_smb_watcher hosts [timeout]\n");
     fprintf(stdout, "roon_smb_watcher shares <name type> <server> [workgroup] [username] [password]\n");
     fprintf(stdout, "roon_smb_watcher shares <name type> <server> --stdin\n");
@@ -653,16 +652,23 @@ static int run_shares(char *name_type, char *name_or_ip, watcher_options *option
     return list_shares(options, name, ip);
 }
 
-// Returns NULL at end of input. A trailing \r is dropped too, because a Windows
-// caller's WriteLine ends lines with \r\n and that \r would become part of the password.
+// Returns NULL at end of input, or if memory runs out. A trailing \r is dropped too,
+// because a Windows caller's WriteLine ends lines with \r\n and that \r would become
+// part of the password.
 static char *read_line(FILE *in) {
     size_t cap = 64, len = 0;
     char *buf = malloc(cap);
     int c;
+    if (buf == NULL) return NULL;
     while ((c = fgetc(in)) != EOF && c != '\n') {
         if (len + 1 == cap) {
+            char *grown = realloc(buf, cap * 2);
+            if (grown == NULL) {
+                free(buf);
+                return NULL;
+            }
+            buf = grown;
             cap *= 2;
-            buf = realloc(buf, cap);
         }
         buf[len++] = (char)c;
     }
@@ -675,12 +681,10 @@ static char *read_line(FILE *in) {
     return buf;
 }
 
-static char *read_credential(FILE *in) {
-    char *line = read_line(in);
-    return line ? line : "";
-}
-
-static void set_credentials(int argc, char** argv, watcher_options *options) {
+// Returns false if --stdin ended before all three lines arrived. That must not be
+// read as empty credentials: a server that allows anonymous IPC$ would then list
+// shares and exit 0, and the caller could not tell its credentials were never used.
+static bool set_credentials(int argc, char** argv, watcher_options *options) {
     // argv[0] is the program and argv[1] the mode; shares also takes <name type> <server>
     int offset = 1;
     if (options->mode == MODE_SHARES) {
@@ -689,9 +693,12 @@ static void set_credentials(int argc, char** argv, watcher_options *options) {
     // Credentials on argv are readable by every local user (/proc/<pid>/cmdline, ps,
     // Task Manager) for as long as we run; --stdin keeps them out of it.
     if ((argc == (2 + offset)) && (strcmp(argv[1 + offset], "--stdin") == 0)) {
-        options->workgroup = read_credential(stdin);
-        options->username  = read_credential(stdin);
-        options->password  = read_credential(stdin);
+        if ((options->workgroup = read_line(stdin)) == NULL ||
+            (options->username  = read_line(stdin)) == NULL ||
+            (options->password  = read_line(stdin)) == NULL) {
+            fprintf(stderr, "ERROR --stdin needs three lines: workgroup, username, password\n");
+            return false;
+        }
     } else if (argc >= (4 + offset)) {
         options->workgroup = argv[1 + offset];
         options->username  = argv[2 + offset];
@@ -709,6 +716,7 @@ static void set_credentials(int argc, char** argv, watcher_options *options) {
         options->username  = "";
         options->password  = "";
     }
+    return true;
 }
 
 int main(int argc, char** argv) {
@@ -717,7 +725,9 @@ int main(int argc, char** argv) {
     struct watcher_options *options = malloc(sizeof(struct watcher_options));
 
     if (strcmp(argv[1], "test") == 0) {
-        if (argc > 5) return usage();
+        // No --stdin here: scan_hosts waits for Enter on that same stdin, which piped
+        // credentials have already left at EOF, so discovery would stop at once.
+        if (argc > 5 || (argc == 3 && strcmp(argv[2], "--stdin") == 0)) return usage();
         options->mode = MODE_TEST;
         set_credentials(argc, argv, options);
         return run_test(options);
@@ -735,7 +745,7 @@ int main(int argc, char** argv) {
     } else if (strcmp(argv[1], "shares") == 0) {
         if ((argc < 4) || (argc > 7)) return usage();
         options->mode = MODE_SHARES;
-        set_credentials(argc, argv, options);
+        if (!set_credentials(argc, argv, options)) return ROON_SMB_NOT_SUPPORTED;
         return run_shares(argv[2], argv[3], options);
     } else {
         return usage();
