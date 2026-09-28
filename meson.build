@@ -54,8 +54,8 @@ else
   deps += cc.find_library('Mpr', static: true)
   deps += cc.find_library('Netapi32', static: true)
   deps += cc.find_library('Advapi32', static: true)
-  ws_lib = meson.get_cross_property('ws_lib', false)
-  if (ws_lib != false)
+  ws_lib = meson.get_cross_property('ws_lib', '')
+  if ws_lib != ''
     deps += cc.find_library(ws_lib)
   endif
 endif
