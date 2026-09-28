@@ -26,6 +26,9 @@ roon_smb_watcher features
 prints one line per optional feature this build supports, and exits 0.
 Currently:
 * credentials-stdin: the --stdin form above
+* credentials-stdin-utf8: --stdin credentials are decoded as UTF-8 on every
+  platform.  A Windows build without it reads them in the ANSI code page, so a
+  non-ASCII password sent as UTF-8 fails to log in
 A build older than this command prints usage and exits 1 instead.
 
 roon_smb_watcher test
