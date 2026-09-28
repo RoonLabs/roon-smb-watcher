@@ -105,15 +105,24 @@ static int nt_error_to_roon_error(int nt_error) {
     }
 }
 
-// Never NULL: to WNetUseConnectionW a NULL password means "the default", not empty.
+// NULL if s is not valid in codepage or memory runs out. Check it before the call:
+// WNetUseConnectionW reads a NULL password as "the default", not as empty. Without
+// MB_ERR_INVALID_CHARS a bad UTF-8 byte becomes U+FFFD and the login fails as a
+// wrong password.
 static wchar_t *to_wide(UINT codepage, const char *s) {
-    int n = MultiByteToWideChar(codepage, 0, s, -1, NULL, 0);
-    wchar_t *w = calloc(n > 0 ? n : 1, sizeof(wchar_t));
-    if (n > 0) MultiByteToWideChar(codepage, 0, s, -1, w, n);
+    DWORD flags = (codepage == CP_UTF8) ? MB_ERR_INVALID_CHARS : 0;
+    int n = MultiByteToWideChar(codepage, flags, s, -1, NULL, 0);
+    if (n <= 0) return NULL;
+    wchar_t *w = calloc(n, sizeof(wchar_t));
+    if (w != NULL && MultiByteToWideChar(codepage, flags, s, -1, w, n) != n) {
+        free(w);
+        return NULL;
+    }
     return w;
 }
 
 static void free_secret(wchar_t *w) {
+    if (w == NULL) return;
     SecureZeroMemory(w, wcslen(w) * sizeof(wchar_t));
     free(w);
 }
@@ -145,6 +154,17 @@ static int list_shares_smb1(void *p_opaque,
     wchar_t *username_w = to_wide(cred_cp, options->username);
     wchar_t *password_w = to_wide(cred_cp, options->password);
     wchar_t *server_name_w = to_wide(CP_ACP, server_name);
+    if (username_w == NULL || password_w == NULL || server_name_w == NULL) {
+        // Not the values: this line goes to stderr, which the caller may log.
+        print_if((options->mode == MODE_TEST), "    could not convert the credentials from %s\n",
+                 options->credentials_utf8 ? "UTF-8" : "the ANSI code page");
+        free_secret(password_w);
+        free(username_w);
+        free(server_name_w);
+        free(server_netresource);
+        free(server_name);
+        return ROON_SMB_UNEXPECTED_ERROR;
+    }
     NETRESOURCEW server_netresource_w = {
         .dwType = RESOURCETYPE_DISK,
         .dwUsage = RESOURCEUSAGE_CONTAINER,
