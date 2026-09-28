@@ -49,9 +49,9 @@ if host_machine.system() != 'windows' and host_machine.system() != 'cygwin'
   deps += dependency('threads')
 else
   deps += cc.find_library('libwinpthread', static: true)
-  deps += cc.find_library('Mpr', static: true)
-  deps += cc.find_library('Netapi32', static: true)
-  deps += cc.find_library('Advapi32', static: true)
+  deps += cc.find_library('mpr', static: true)
+  deps += cc.find_library('netapi32', static: true)
+  deps += cc.find_library('advapi32', static: true)
   ws_lib = meson.get_cross_property('ws_lib', '')
   if ws_lib != ''
     deps += cc.find_library(ws_lib)
