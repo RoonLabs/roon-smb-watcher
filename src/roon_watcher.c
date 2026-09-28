@@ -568,8 +568,11 @@ static void on_entry_removed(void *p_opaque,
 static int usage() {
     fprintf(stdout, "Usage:\n");
     fprintf(stdout, "roon_smb_watcher test [workgroup] [username] [password]\n");
+    fprintf(stdout, "roon_smb_watcher test --stdin\n");
     fprintf(stdout, "roon_smb_watcher hosts [timeout]\n");
     fprintf(stdout, "roon_smb_watcher shares <name type> <server> [workgroup] [username] [password]\n");
+    fprintf(stdout, "roon_smb_watcher shares <name type> <server> --stdin\n");
+    fprintf(stdout, "roon_smb_watcher features\n");
     fprintf(stdout, "\n");
     fprintf(stdout, "see README file for details\n");
     return ROON_SMB_NOT_SUPPORTED;
@@ -650,13 +653,46 @@ static int run_shares(char *name_type, char *name_or_ip, watcher_options *option
     return list_shares(options, name, ip);
 }
 
+// Returns NULL at end of input. A trailing \r is dropped too, because a Windows
+// caller's WriteLine ends lines with \r\n and that \r would become part of the password.
+static char *read_line(FILE *in) {
+    size_t cap = 64, len = 0;
+    char *buf = malloc(cap);
+    int c;
+    while ((c = fgetc(in)) != EOF && c != '\n') {
+        if (len + 1 == cap) {
+            cap *= 2;
+            buf = realloc(buf, cap);
+        }
+        buf[len++] = (char)c;
+    }
+    if (c == EOF && len == 0) {
+        free(buf);
+        return NULL;
+    }
+    if (len > 0 && buf[len - 1] == '\r') len--;
+    buf[len] = '\0';
+    return buf;
+}
+
+static char *read_credential(FILE *in) {
+    char *line = read_line(in);
+    return line ? line : "";
+}
+
 static void set_credentials(int argc, char** argv, watcher_options *options) {
     // argv[0] is the program and argv[1] the mode; shares also takes <name type> <server>
     int offset = 1;
     if (options->mode == MODE_SHARES) {
         offset = 3;
     }
-    if (argc >= (4 + offset)) {
+    // Credentials on argv are readable by every local user (/proc/<pid>/cmdline, ps,
+    // Task Manager) for as long as we run; --stdin keeps them out of it.
+    if ((argc == (2 + offset)) && (strcmp(argv[1 + offset], "--stdin") == 0)) {
+        options->workgroup = read_credential(stdin);
+        options->username  = read_credential(stdin);
+        options->password  = read_credential(stdin);
+    } else if (argc >= (4 + offset)) {
         options->workgroup = argv[1 + offset];
         options->username  = argv[2 + offset];
         options->password  = argv[3 + offset];
@@ -691,6 +727,11 @@ int main(int argc, char** argv) {
         intmax_t freq = 0;
         if (argc == 3) freq = strtoimax(argv[2], NULL, 10);
         return run_hosts(freq, options);     
+    } else if (strcmp(argv[1], "features") == 0) {
+        // An older watcher prints usage and exits ROON_SMB_NOT_SUPPORTED here, so a
+        // caller can probe before it relies on --stdin.
+        fprintf(stdout, "credentials-stdin\n");
+        return ROON_SMB_SUCCESS;
     } else if (strcmp(argv[1], "shares") == 0) {
         if ((argc < 4) || (argc > 7)) return usage();
         options->mode = MODE_SHARES;

@@ -7,12 +7,26 @@ meson ninja automake autoconf libtool
 
 Usage:
 roon_smb_watcher test [workgroup] [username] [password]
+roon_smb_watcher test --stdin
 roon_smb_watcher hosts [timeout]
 roon_smb_watcher shares <name type> <server> [workgroup] [username] [password]
+roon_smb_watcher shares <name type> <server> --stdin
+roon_smb_watcher features
 
 workgroup, username, and password are all optional.  if only one
 extra argument is provided, it's treated as a username, if two
 they are treated as username and password in that order
+
+--stdin in place of the credentials reads them from stdin instead: three
+lines, workgroup then username then password, each ended by \n or \r\n.
+A missing line is read as empty.  Prefer it: anything on the command line
+can be read by every local user while the watcher runs.
+
+roon_smb_watcher features
+prints one line per optional feature this build supports, and exits 0.
+Currently:
+* credentials-stdin: the --stdin form above
+A build older than this command prints usage and exits 1 instead.
 
 roon_smb_watcher test
 this is meant as manual tool to confirm that the watcher works.  it prints
