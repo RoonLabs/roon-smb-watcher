@@ -432,11 +432,14 @@ static int list_shares_smb2(void *p_opaque,
         smb2_destroy_context(smb2);
         return ret;
     }
+    // Bounds the sync disconnect below. The enum loop keeps its own deadline: pdu timeouts
+    // are checked only inside smb2_service, which it calls once the socket is readable.
+    // Set after connecting, because a timeout also stretches the sync connect's TCP wait.
+    smb2_set_timeout(smb2, SMB2_SHARE_ENUM_TIMEOUT_SECS);
 
     int enum_ret = smb2_share_enum_async(smb2, se_cb, p_opaque);
     if (enum_ret != 0) {
         print_if((options->mode == MODE_TEST), "    smb2_share_enum failed. %s\n", smb2_get_error(smb2));
-        smb2_disconnect_share(smb2);
         smb2_destroy_context(smb2);
         return ROON_SMB_NETWORK_ERROR;
     }
@@ -476,7 +479,10 @@ static int list_shares_smb2(void *p_opaque,
         }
     }
 
-    smb2_disconnect_share(smb2);
+    // A sync disconnect waits for the server, so after a timeout or failure it could hang
+    // on the same silent server, and servicing it could still deliver a late share list to
+    // se_cb. Destroying the context cancels the pending enum instead.
+    if (cb_done) smb2_disconnect_share(smb2);
     smb2_destroy_context(smb2);
 
     return ret;
