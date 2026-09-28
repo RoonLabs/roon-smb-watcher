@@ -14,7 +14,9 @@ roon_smb_watcher features
 
 workgroup, username, and password are all optional.  if only one
 extra argument is provided, it's treated as a username, if two
-they are treated as username and password in that order
+they are treated as username and password in that order.  On Linux and
+macOS they must be UTF-8, from the command line or from --stdin; ones that
+are not exit 2 before any server is tried
 
 --stdin in place of the shares credentials reads them from stdin instead:
 three lines, workgroup then username then password, each ended by \n or

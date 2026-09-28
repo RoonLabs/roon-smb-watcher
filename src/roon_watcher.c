@@ -77,6 +77,43 @@ static void print_entry(const char *what,
             netbios_ns_entry_type(entry)); fflush(stdout);
 }
 
+#ifndef PLATFORM_WINDOWS
+// libdsm and libsmb2 take credentials as UTF-8. libdsm hashes a string it cannot
+// convert as an empty password, so bad bytes would come back as
+// ROON_SMB_INVALID_PASSWORD. Same rules as libsmb2's and iconv's: no overlongs,
+// surrogates or code points past U+10FFFF.
+static bool is_utf8(const char *s) {
+    const unsigned char *p = (const unsigned char *)s;
+    while (*p) {
+        unsigned char c = *p++;
+        int more;
+        uint32_t cp;
+        if (c < 0x80) continue;
+        else if (c >= 0xc2 && c <= 0xdf) { more = 1; cp = c & 0x1f; }
+        else if (c >= 0xe0 && c <= 0xef) { more = 2; cp = c & 0x0f; }
+        else if (c >= 0xf0 && c <= 0xf4) { more = 3; cp = c & 0x07; }
+        else return false;
+        for (int i = 0; i < more; i++, p++) {
+            if ((*p & 0xc0) != 0x80) return false;
+            cp = (cp << 6) | (*p & 0x3f);
+        }
+        if ((more == 2 && cp < 0x800) || (more == 3 && cp < 0x10000) ||
+            (cp >= 0xd800 && cp <= 0xdfff) || cp > 0x10ffff) return false;
+    }
+    return true;
+}
+
+// Windows checks in to_wide instead, where it knows the code page.
+static bool credentials_convert(const watcher_options *options) {
+    if (is_utf8(options->workgroup) && is_utf8(options->username) && is_utf8(options->password)) {
+        return true;
+    }
+    // Not the values: stderr may be logged.
+    fprintf(stderr, "ERROR credentials are not valid UTF-8\n");
+    return false;
+}
+#endif
+
 #ifdef PLATFORM_WINDOWS
 // A server that maps an unknown user to guest gets this from a Windows client that
 // refuses guest logons; mingw's winerror.h has no name for it.
@@ -779,6 +816,9 @@ int main(int argc, char** argv) {
         if (argc > 5 || (argc == 3 && strcmp(argv[2], "--stdin") == 0)) return usage();
         options->mode = MODE_TEST;
         set_credentials(argc, argv, options);
+#ifndef PLATFORM_WINDOWS
+        if (!credentials_convert(options)) return ROON_SMB_UNEXPECTED_ERROR;
+#endif
         return run_test(options);
     } else if (strcmp(argv[1], "hosts") == 0) {
         if (argc > 3) return usage();
@@ -796,6 +836,9 @@ int main(int argc, char** argv) {
         if ((argc < 4) || (argc > 7)) return usage();
         options->mode = MODE_SHARES;
         if (!set_credentials(argc, argv, options)) return ROON_SMB_NOT_SUPPORTED;
+#ifndef PLATFORM_WINDOWS
+        if (!credentials_convert(options)) return ROON_SMB_UNEXPECTED_ERROR;
+#endif
         return run_shares(argv[2], argv[3], options);
     } else {
         return usage();
