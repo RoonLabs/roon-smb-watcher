@@ -31,7 +31,7 @@ rm -rf libdsm
 if [ "x`uname -o`" != "xCygwin" ]; then
     gitclone https://github.com/sahlberg/libsmb2.git libsmb2 4a5a0d0c9498c8a2a6b7d21cc3454229c81ae5c0
 fi
-gitclone https://github.com/RoonLabs/libdsm.git libdsm d30bc43563c4c64b5ad4a7144a03e8c44a5630fc
+gitclone https://github.com/RoonLabs/libdsm.git libdsm 991d749edacf84431e2ad67fe05b3cee10f02df5
 
 if [ "x`uname -o`" != "xCygwin" ]; then
 echo "Building libsmb2"
