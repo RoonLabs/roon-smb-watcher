@@ -45,6 +45,8 @@ struct watcher_options {
     char *workgroup;
     char *username;
     char *password;
+    // --stdin credentials are UTF-8; argv ones are in the ANSI code page on Windows.
+    bool credentials_utf8;
     enum watcher_mode mode;
 };
 
@@ -103,6 +105,28 @@ static int nt_error_to_roon_error(int nt_error) {
     }
 }
 
+// NULL if s is not valid in codepage or memory runs out. Check it before the call:
+// WNetUseConnectionW reads a NULL password as "the default", not as empty. Without
+// MB_ERR_INVALID_CHARS a bad UTF-8 byte becomes U+FFFD and the login fails as a
+// wrong password.
+static wchar_t *to_wide(UINT codepage, const char *s) {
+    DWORD flags = (codepage == CP_UTF8) ? MB_ERR_INVALID_CHARS : 0;
+    int n = MultiByteToWideChar(codepage, flags, s, -1, NULL, 0);
+    if (n <= 0) return NULL;
+    wchar_t *w = calloc(n, sizeof(wchar_t));
+    if (w != NULL && MultiByteToWideChar(codepage, flags, s, -1, w, n) != n) {
+        free(w);
+        return NULL;
+    }
+    return w;
+}
+
+static void free_secret(wchar_t *w) {
+    if (w == NULL) return;
+    SecureZeroMemory(w, wcslen(w) * sizeof(wchar_t));
+    free(w);
+}
+
 static int list_shares_smb1(void *p_opaque,
                             char *name,
                             uint32_t ip) {
@@ -126,7 +150,30 @@ static int list_shares_smb1(void *p_opaque,
     server_netresource->lpRemoteName = server_name;
     server_netresource->lpProvider = NULL;
 
-    nt_error = WNetUseConnection(NULL, server_netresource, options->password, options->username, 0, NULL, NULL, NULL);
+    UINT cred_cp = options->credentials_utf8 ? CP_UTF8 : CP_ACP;
+    wchar_t *username_w = to_wide(cred_cp, options->username);
+    wchar_t *password_w = to_wide(cred_cp, options->password);
+    wchar_t *server_name_w = to_wide(CP_ACP, server_name);
+    if (username_w == NULL || password_w == NULL || server_name_w == NULL) {
+        // Not the values: this line goes to stderr, which the caller may log.
+        print_if((options->mode == MODE_TEST), "    could not convert the credentials from %s\n",
+                 options->credentials_utf8 ? "UTF-8" : "the ANSI code page");
+        free_secret(password_w);
+        free(username_w);
+        free(server_name_w);
+        free(server_netresource);
+        free(server_name);
+        return ROON_SMB_UNEXPECTED_ERROR;
+    }
+    NETRESOURCEW server_netresource_w = {
+        .dwType = RESOURCETYPE_DISK,
+        .dwUsage = RESOURCEUSAGE_CONTAINER,
+        .lpRemoteName = server_name_w,
+    };
+    nt_error = WNetUseConnectionW(NULL, &server_netresource_w, password_w, username_w, 0, NULL, NULL, NULL);
+    free_secret(password_w);
+    free(username_w);
+    free(server_name_w);
     if (nt_error == NO_ERROR) {
         print_if((options->mode == MODE_TEST), "    connected to %s as %s\n", server_name, options->username);
 
@@ -517,6 +564,7 @@ static int list_shares(watcher_options *options,
         guest_creds->workgroup = "";
         guest_creds->username  = "Guest";
         guest_creds->password  = "password";
+        guest_creds->credentials_utf8 = false;
 #ifndef PLATFORM_WINDOWS
         print_if(test_mode, "  attempting to list shares over smb2 as guest\n");
         smb2_ret = list_shares_smb2(guest_creds, smb2_host);
@@ -699,6 +747,7 @@ static bool set_credentials(int argc, char** argv, watcher_options *options) {
             fprintf(stderr, "ERROR --stdin needs three lines: workgroup, username, password\n");
             return false;
         }
+        options->credentials_utf8 = true;
     } else if (argc >= (4 + offset)) {
         options->workgroup = argv[1 + offset];
         options->username  = argv[2 + offset];
@@ -722,7 +771,7 @@ static bool set_credentials(int argc, char** argv, watcher_options *options) {
 int main(int argc, char** argv) {
     if (argc == 1) return usage();
 
-    struct watcher_options *options = malloc(sizeof(struct watcher_options));
+    struct watcher_options *options = calloc(1, sizeof(struct watcher_options));
 
     if (strcmp(argv[1], "test") == 0) {
         // No --stdin here: scan_hosts waits for Enter on that same stdin, which piped
@@ -741,6 +790,7 @@ int main(int argc, char** argv) {
         // An older watcher prints usage and exits ROON_SMB_NOT_SUPPORTED here, so a
         // caller can probe before it relies on --stdin.
         fprintf(stdout, "credentials-stdin\n");
+        fprintf(stdout, "credentials-stdin-utf8\n");
         return ROON_SMB_SUCCESS;
     } else if (strcmp(argv[1], "shares") == 0) {
         if ((argc < 4) || (argc > 7)) return usage();
