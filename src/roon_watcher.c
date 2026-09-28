@@ -152,10 +152,6 @@ static int list_shares_smb1(void *p_opaque,
             return nt_error_to_roon_error(nt_error);
         }
 
-        if (options->mode == MODE_SHARES) {
-            fprintf(stdout, "SUCCESS SMB1\n"); fflush(stdout);
-        }
-
         share_netresource = (LPNETRESOURCE) GlobalAlloc(GPTR, buf_size);
         if (share_netresource == NULL) {
             print_if((options->mode == MODE_TEST), "GlobalAlloc failed\n");
@@ -166,6 +162,8 @@ static int list_shares_smb1(void *p_opaque,
             return ROON_SMB_UNEXPECTED_ERROR;
         }
 
+        DWORD enum_error = NO_ERROR;
+        bool header_printed = false;
         do {
             ZeroMemory(share_netresource, buf_size);
             share_ret = WNetEnumResource(enum_handle,  // resource handle
@@ -173,6 +171,10 @@ static int list_shares_smb1(void *p_opaque,
                                             share_netresource,      // LPNETRESOURCE
                                             &buf_size);     // buffer size
             if (share_ret == NO_ERROR) {
+                if ((options->mode == MODE_SHARES) && !header_printed) {
+                    fprintf(stdout, "SUCCESS SMB1\n"); fflush(stdout);
+                    header_printed = true;
+                }
                 print_if((options->mode == MODE_TEST), "        share count: %i\n", num_entries);
                 char *format = "        share name: %-20s %-20s";
                 char *prefix = "     ";
@@ -193,9 +195,13 @@ static int list_shares_smb1(void *p_opaque,
                 }
             } else if (share_ret != ERROR_NO_MORE_ITEMS) {
                 print_if((options->mode == MODE_TEST),"WNetEnumResource failed with error %d\n", share_ret);
+                enum_error = share_ret;
                 break;
             }
         } while (share_ret != ERROR_NO_MORE_ITEMS);
+        if ((options->mode == MODE_SHARES) && (enum_error == NO_ERROR) && !header_printed) {
+            fprintf(stdout, "SUCCESS SMB1\n"); fflush(stdout);
+        }
  
         GlobalFree((HGLOBAL) share_netresource);
         nt_error = WNetCloseEnum(enum_handle);
@@ -205,7 +211,15 @@ static int list_shares_smb1(void *p_opaque,
         }
         // Left open, the connection pins these credentials: the next run as another user
         // fails with ERROR_SESSION_CREDENTIAL_CONFLICT.
-        WNetCancelConnection2(server_name, 0, FALSE);
+        nt_error = WNetCancelConnection2(server_name, 0, FALSE);
+        if (nt_error != NO_ERROR) {
+            print_if((options->mode == MODE_TEST), "WNetCancelConnection2 failed with error %d\n", nt_error);
+        }
+        if (enum_error != NO_ERROR) {
+            free(server_netresource);
+            free(server_name);
+            return nt_error_to_roon_error(enum_error);
+        }
     } else {
         print_if((options->mode == MODE_TEST), "    WNetUseConnection failed to connect to %s as %s, error code: %d\n", server_name, options->username, nt_error);
         free(server_netresource);
@@ -317,10 +331,16 @@ static int list_shares_smb1(void *p_opaque,
     return 0;
 }
 
-int cb_status;
+// Set by se_cb. cb_status is not a pending sentinel: libsmb2 hands se_cb a -errno,
+// or the srvsvc WERROR (positive) when the RPC itself succeeded.
+static bool cb_done;
+static int cb_status;
 
-// libsmb2 maps STATUS_LOGON_FAILURE, and no other NT status, to ECONNREFUSED; a
-// refused TCP connect gives ECONNREFUSED too, so the error text tells them apart.
+#define WERR_ACCESS_DENIED 5
+#define SMB2_SHARE_ENUM_TIMEOUT_SECS 30
+
+// libsmb2 maps STATUS_LOGON_FAILURE, and no other NT status, to ECONNREFUSED. A
+// refused TCP connect never arrives as ECONNREFUSED: the sync connect returns -1.
 static int smb2_error_to_roon_error(struct smb2_context *smb2, int err) {
     if ((err == ECONNREFUSED) && (strstr(smb2_get_error(smb2), "STATUS_LOGON_FAILURE") != NULL)) {
         return ROON_SMB_INVALID_PASSWORD;
@@ -337,9 +357,11 @@ void se_cb(struct smb2_context *smb2, int status,
         struct watcher_options *options = (struct watcher_options *)p_opaque;
         int i;
 
+        cb_done = true;
         if (status) {
                 print_if((options->mode == MODE_TEST), "    failed to enumerate shares [%d](%s) %s\n",
-                       status, strerror(-status), smb2_get_error(smb2));
+                       status, status < 0 ? strerror(-status) : "WERROR", smb2_get_error(smb2));
+                if (rep != NULL) smb2_free_data(smb2, rep);
                 cb_status = status;
                 return;
         }
@@ -395,7 +417,8 @@ static int list_shares_smb2(void *p_opaque,
         return 1;
     }
 
-    cb_status = 1;
+    cb_done = false;
+    cb_status = 0;
 
     smb2_set_security_mode(smb2, SMB2_NEGOTIATE_SIGNING_ENABLED);
     if (options->username[0] != '\0') smb2_set_user(smb2, options->username);
@@ -419,7 +442,12 @@ static int list_shares_smb2(void *p_opaque,
     }
 
     int ret = ROON_SMB_NETWORK_ERROR;
-    while (cb_status > 0) {
+    time_t deadline = time(NULL) + SMB2_SHARE_ENUM_TIMEOUT_SECS;
+    while (!cb_done) {
+        if (time(NULL) > deadline) {
+            print_if((options->mode == MODE_TEST), "    share enumeration timed out\n");
+            break;
+        }
         pfd.fd = smb2_get_fd(smb2);
         pfd.events = smb2_which_events(smb2);
 
@@ -438,10 +466,14 @@ static int list_shares_smb2(void *p_opaque,
             break;
         }
     }
-    if (cb_status == 0) {
-        ret = ROON_SMB_SUCCESS;
-    } else if (cb_status < 0) {
-        ret = smb2_error_to_roon_error(smb2, -cb_status);
+    if (cb_done) {
+        if (cb_status == 0) {
+            ret = ROON_SMB_SUCCESS;
+        } else if (cb_status == WERR_ACCESS_DENIED) {
+            ret = ROON_SMB_UNAUTHORIZED;
+        } else if (cb_status < 0) {
+            ret = smb2_error_to_roon_error(smb2, -cb_status);
+        }
     }
 
     smb2_disconnect_share(smb2);
